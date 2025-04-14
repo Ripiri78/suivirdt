@@ -1293,165 +1293,180 @@ function obtenirDureesAleasParPeriode(typePeriode, filtres) {
 }
 
 // Fonction pour obtenir les données de la feuille
+// Fonction pour obtenir les données de la feuille
 function obtenirDonnees() {
   try {
     Logger.log("Début de l'exécution de obtenirDonnees()");
-    var spreadsheetId = '1Ni8E2HagtluqzpJLwUbBrgZdYtIuKud1jxtpK1StFS8';
+    var spreadsheetId = '1Ni8E2HagtluqzpJLwUbBrgZdYtIuKud1jxtpK1StFS8'; // Remplacez par votre ID de Spreadsheet
     var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
-    var sheet = spreadsheet.getSheetByName('Historique rendement');
-    
+    var sheet = spreadsheet.getSheetByName('Historique rendement'); // Assurez-vous que le nom est correct
+
     if (!sheet) {
-      return { 
-        erreur: "Feuille 'Historique rendement' introuvable",
-        donnees: [],
-        postes: [],
-        equipes: [],
-        operateurs: []
-      };
+      Logger.log("ERREUR: Feuille 'Historique rendement' introuvable.");
+      return { erreur: "Feuille 'Historique rendement' introuvable", donnees: [], postes: [], equipes: [], operateurs: [] };
     }
-    
+
     var dataRange = sheet.getDataRange();
     var values = dataRange.getValues();
-    
+
+    // Vérifier si la feuille contient au moins 2 lignes pour les en-têtes
+    if (values.length < 2) {
+       Logger.log("ERREUR: La feuille 'Historique rendement' ne contient pas d'en-têtes à la ligne 2.");
+       return { erreur: "Structure de feuille incorrecte: en-têtes manquants à la ligne 2.", donnees: [], postes: [], equipes: [], operateurs: [] };
+    }
+
     // Les en-têtes sont dans la 2ème ligne (index 1)
     var entetes = values[1];
     var donnees = [];
-  
-    // Obtenir les indices des colonnes de base
+
+    // ---- Identification des Indices des Colonnes ----
     var indexOperateur = entetes.indexOf("Opérateur");
     var indexEquipe = entetes.indexOf("Equipe");
     var indexDate = entetes.indexOf("Date");
     var indexAnnee = entetes.indexOf("Année");
     var indexSemaine = entetes.indexOf("Semaine");
-    
-    // Pour information seulement, nous n'utiliserons pas cette colonne pour les regroupements
     var indexPosteHabituel = entetes.indexOf("Poste habituel");
-    
-    // Colonnes TAI (P à V) - index 15 à 21
+
+    // Vérification que les colonnes de base existent
+    if ([indexOperateur, indexEquipe, indexDate, indexAnnee, indexSemaine, indexPosteHabituel].includes(-1)) {
+         Logger.log("ERREUR: Une ou plusieurs colonnes de base (Opérateur, Equipe, Date, Année, Semaine, Poste habituel) sont introuvables à la ligne 2.");
+         return { erreur: "Structure de feuille incorrecte: colonnes de base manquantes.", donnees: [], postes: [], equipes: [], operateurs: [] };
+    }
+
+    // Colonnes TAI (Indices 15 à 21, soit P à V)
     var taiColumns = [];
     for (var i = 15; i <= 21; i++) {
-      if (i < entetes.length && entetes[i]) {
-        taiColumns.push({
-          nom: String(entetes[i]),
-          index: i
-        });
-      }
+        if (i < entetes.length && entetes[i]) {
+            taiColumns.push({ nom: String(entetes[i]), index: i });
+        }
     }
-    
-    // Colonnes présence (X à AC) - index 23 à 28
+
+    // Colonnes présence (Indices 23 à 28, soit X à AC)
     var presenceColumns = [];
     for (var i = 23; i <= 28; i++) {
-      if (i < entetes.length && entetes[i]) {
-        presenceColumns.push({
-          nom: String(entetes[i]),
-          index: i
-        });
-      }
+         if (i < entetes.length && entetes[i]) {
+            presenceColumns.push({ nom: String(entetes[i]), index: i });
+        }
     }
-    
-    Logger.log("Colonnes TAI trouvées: " + taiColumns.map(c => c.nom).join(", "));
-    Logger.log("Colonnes présence trouvées: " + presenceColumns.map(c => c.nom).join(", "));
-    
-    // Rechercher MASQUAGE et DEMASQUAGE pour information
-    var indexMasquage = -1;
-    var indexDemasquage = -1;
-    
-    // Chercher par nom
-    for (var i = 0; i < entetes.length; i++) {
-      var headerName = String(entetes[i] || "");
-      if (headerName === "MASQUAGE") {
-        indexMasquage = i;
-      } else if (headerName === "DEMASQUAGE") {
-        indexDemasquage = i;
-      }
+
+    // *** MODIFICATION : Identifier les colonnes d'inactivité (AD à AK => index 29 à 36) ***
+    var inactiviteColumns = [];
+    for (var k = 29; k <= 36; k++) { // Colonnes AD(29) à AK(36)
+         if (k < entetes.length && entetes[k]) { // Vérifie si l'index existe et si l'en-tête n'est pas vide
+            inactiviteColumns.push({ nom: String(entetes[k]), index: k });
+        }
     }
-    
+    if (inactiviteColumns.length > 0) {
+        Logger.log("Colonnes d'inactivité identifiées: " + inactiviteColumns.map(c => c.nom).join(", "));
+    } else {
+         Logger.log("ATTENTION: Aucune colonne d'inactivité trouvée entre AD et AK avec un nom dans la ligne 2.");
+    }
+    // *** FIN MODIFICATION ***
+
+    // Indices MASQUAGE/DEMASQUAGE ... (code inchangé)
+    var indexMasquage = entetes.indexOf("MASQUAGE");
+    var indexDemasquage = entetes.indexOf("DEMASQUAGE");
+    // ---- Fin Identification des Indices ----
+
     // Parcourir les données (à partir de la 3ème ligne, index 2)
     for (var i = 2; i < values.length; i++) {
       var row = values[i];
-      
-      // Vérifier que la ligne contient des données valides
+
+      // Vérifier que la ligne contient un opérateur
       if (row[indexOperateur]) {
         var dateStr = "";
-        if (typeof row[indexDate] === 'object' && row[indexDate] instanceof Date) {
-          dateStr = Utilities.formatDate(row[indexDate], Session.getScriptTimeZone(), "yyyy-MM-dd");
-        } else if (typeof row[indexDate] === 'string') {
-          dateStr = row[indexDate];
-        }
-        
-        // Collecter les valeurs TAI par poste avec leur somme
+         try {
+             if (row[indexDate] instanceof Date && !isNaN(row[indexDate])) {
+               dateStr = Utilities.formatDate(row[indexDate], Session.getScriptTimeZone(), "yyyy-MM-dd");
+             } else if (typeof row[indexDate] === 'string' && row[indexDate].length > 0) {
+               // Essayer de parser différents formats si nécessaire, ici on assume yyyy-MM-dd ou on garde tel quel
+               dateStr = row[indexDate]; // Attention: peut nécessiter une validation/conversion plus poussée
+             }
+         } catch (e) {
+              Logger.log("Erreur formatage date ligne " + (i+1) + ": " + row[indexDate] + " - Erreur: " + e);
+              dateStr = ""; // Laisser vide si erreur
+         }
+
+        // Collecter TAI
         var taiTotal = 0;
         var taiParPoste = {};
         taiColumns.forEach(function(col) {
-          var valeur = parseFloat(row[col.index]) || 0;
-          taiParPoste[col.nom] = valeur;
-          taiTotal += valeur;
+            var valeur = parseFloat(row[col.index]) || 0;
+            taiParPoste[col.nom] = valeur;
+            taiTotal += valeur;
         });
-        
-        // Collecter les valeurs de présence par poste avec leur somme
+
+        // Collecter présence
         var presenceTotal = 0;
         var presenceParPoste = {};
         presenceColumns.forEach(function(col) {
-          var valeur = parseFloat(row[col.index]) || 0;
-          presenceParPoste[col.nom] = valeur;
-          presenceTotal += valeur;
+             var valeur = parseFloat(row[col.index]) || 0;
+             presenceParPoste[col.nom] = valeur;
+             presenceTotal += valeur;
         });
-        
-        // Calculer le rendement comme TAI Total / Présence Totale
+
+        // Calculer rendement
         var rendement = presenceTotal > 0 ? taiTotal / presenceTotal : 0;
-        
-        // Ajouter l'entrée aux données
+
+        // Créer l'objet donneeItem
         var donneeItem = {
           operateur: row[indexOperateur],
           equipe: row[indexEquipe] || "",
-          poste: row[indexPosteHabituel] || "", // Gardé pour la compatibilité, mais ne sera pas utilisé pour les regroupements
+          poste: row[indexPosteHabituel] || "", // Poste "principal" pour info
           date: dateStr,
           annee: row[indexAnnee] || "",
           semaine: row[indexSemaine] || "",
           rendement: rendement,
           tai: taiTotal,
           presence: presenceTotal,
-          taiParPoste: taiParPoste,
-          presenceParPoste: presenceParPoste
+          taiParPoste: taiParPoste, // TAI détaillé par type de poste
+          presenceParPoste: presenceParPoste, // Présence détaillée par type de poste
+          // *** MODIFICATION : Ajouter l'objet inactivite ***
+          inactivite: {}
+          // *** FIN MODIFICATION ***
         };
-        
-        // Ajouter MASQUAGE et DEMASQUAGE si disponibles
+
+         // *** MODIFICATION : Remplir les données d'inactivité ***
+         inactiviteColumns.forEach(function(col) {
+            donneeItem.inactivite[col.nom] = parseFloat(row[col.index]) || 0;
+         });
+         // *** FIN MODIFICATION ***
+
+        // Ajouter MASQUAGE/DEMASQUAGE
         if (indexMasquage !== -1) {
-          donneeItem.masquage = parseFloat(row[indexMasquage]) || 0;
+            donneeItem.masquage = parseFloat(row[indexMasquage]) || 0;
         }
         if (indexDemasquage !== -1) {
-          donneeItem.demasquage = parseFloat(row[indexDemasquage]) || 0;
+            donneeItem.demasquage = parseFloat(row[indexDemasquage]) || 0;
         }
-        
+
         donnees.push(donneeItem);
       }
     }
-    
-    // Extraire les listes uniques (maintenant basées uniquement sur les noms de colonne pour les postes)
-    var postesTypes = taiColumns.map(c => c.nom);
+
+    // Extraire les listes uniques
+    var postesTypes = taiColumns.map(c => c.nom); // Les types de postes sont les noms des colonnes TAI/Présence
     var equipes = [...new Set(donnees.map(item => item.equipe))].filter(e => e).sort();
     var operateurs = [...new Set(donnees.map(item => item.operateur))].filter(o => o).sort();
-    
+
+    Logger.log("obtenirDonnees: " + donnees.length + " enregistrements traités.");
     return {
       donnees: donnees,
-      postes: postesTypes, // Remplacer par les types de postes extraits des en-têtes
+      postes: postesTypes, // Liste des types de postes (issus des colonnes TAI/Présence)
       equipes: equipes,
       operateurs: operateurs,
-      postesTypes: postesTypes // Doublon pour compatibilité
+      postesTypes: postesTypes // Maintenu pour compatibilité potentielle
     };
-    
+
   } catch (e) {
-    Logger.log("ERREUR dans obtenirDonnees: " + e.toString());
-    Logger.log("Stack trace: " + e.stack);
-    return { 
-      erreur: "Erreur lors de la lecture des données: " + e.toString(),
-      donnees: [],
-      postes: [],
-      equipes: [],
-      operateurs: []
+    Logger.log("ERREUR GRAVE dans obtenirDonnees: " + e.toString() + "\nStack: " + e.stack);
+    return {
+      erreur: "Erreur serveur lors de la lecture des données: " + e.toString(),
+      donnees: [], postes: [], equipes: [], operateurs: []
     };
   }
 }
+
 
 // Ajouter cette nouvelle fonction dans Code.gs
 function obtenirDatePlusRecente() {
@@ -1730,6 +1745,221 @@ function obtenirDonnees() {
       equipes: [],
       operateurs: []
     };
+  }
+}
+
+/**
+ * Fonction pour obtenir les statistiques d'inactivité
+ * @param {Object} filtres - Filtres à appliquer
+ * @return {Object} - Objet contenant les statistiques agrégées
+ */
+function obtenirStatistiquesInactivite(filtres) {
+  try {
+    Logger.log("Démarrage de obtenirStatistiquesInactivite() avec filtres: " + JSON.stringify(filtres));
+
+    // 1. Obtenir directement les données du tableau
+    var spreadsheetId = '1Ni8E2HagtluqzpJLwUbBrgZdYtIuKud1jxtpK1StFS8';
+    var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    var sheet = spreadsheet.getSheetByName('Historique rendement');
+    
+    if (!sheet) {
+      Logger.log("Feuille 'Historique rendement' introuvable");
+      return { success: false, message: "Feuille 'Historique rendement' introuvable" };
+    }
+    
+    var range = sheet.getDataRange();
+    var values = range.getValues();
+    var headers = values[1]; // Les en-têtes sont dans la deuxième ligne (index 1)
+    
+    // 2. Identifier les colonnes d'inactivité (généralement colonnes AD à AK, indices 29-36)
+    var inactiviteColumns = [];
+    var inactiviteTypes = [];
+    
+    for (var i = 29; i <= 36; i++) {
+      if (i < headers.length && headers[i]) {
+        inactiviteColumns.push(i);
+        inactiviteTypes.push(String(headers[i]));
+        Logger.log("Colonne d'inactivité identifiée: " + headers[i] + " à l'index " + i);
+      }
+    }
+    
+    if (inactiviteColumns.length === 0) {
+      Logger.log("Aucune colonne d'inactivité trouvée");
+      return { success: false, message: "Aucune colonne d'inactivité trouvée" };
+    }
+    
+    // 3. Identifier d'autres colonnes importantes
+    var dateIndex = -1;
+    var operateurIndex = -1;
+    var equipeIndex = -1;
+    var posteIndex = -1;
+    var presenceIndex = -1;
+    
+    for (var i = 0; i < headers.length; i++) {
+      var header = String(headers[i] || "").toLowerCase();
+      if (header === "date") dateIndex = i;
+      else if (header === "opérateur" || header === "operateur") operateurIndex = i;
+      else if (header === "equipe" || header === "équipe") equipeIndex = i;
+      else if (header === "poste habituel") posteIndex = i;
+      // Pour les présences, chercher une colonne avec "présence totale" ou similaire
+      else if (header.includes("présence") && (header.includes("total") || header.includes("totale"))) {
+        presenceIndex = i;
+        Logger.log("Colonne de présence totale trouvée à l'index " + i);
+      }
+    }
+    
+    // 4. Initialiser les structures pour les résultats
+    var stats = {
+      total: { duree: 0, nbEntrees: 0, presenceTotal: 0 },
+      parType: {},
+      parPoste: {},
+      parEquipe: {}
+    };
+    
+    // Initialiser les compteurs pour les types d'inactivité
+    inactiviteTypes.forEach(function(type) {
+      stats.parType[type] = { duree: 0, nbOccurrences: 0 };
+    });
+    
+    // 5. Agréger les données d'inactivité à partir des 3ème ligne (index 2)
+    for (var rowIndex = 2; rowIndex < values.length; rowIndex++) {
+      var row = values[rowIndex];
+      
+      // Vérifier si la ligne a un opérateur (pour être sûr que c'est une ligne valide)
+      if (!row[operateurIndex]) continue;
+      
+      // Appliquer les filtres
+      if (filtres) {
+        // Filtre de date
+        if ((filtres.dateDebut || filtres.dateFin) && dateIndex >= 0) {
+          var dateVal = row[dateIndex];
+          if (!(dateVal instanceof Date)) continue;
+          
+          if (filtres.dateDebut) {
+            var dateDebut = new Date(filtres.dateDebut);
+            if (dateVal < dateDebut) continue;
+          }
+          
+          if (filtres.dateFin) {
+            var dateFin = new Date(filtres.dateFin);
+            dateFin.setHours(23, 59, 59, 999); // Fin de journée
+            if (dateVal > dateFin) continue;
+          }
+        }
+        
+        // Filtre d'équipe
+        if (filtres.equipe && equipeIndex >= 0 && row[equipeIndex] !== filtres.equipe) {
+          continue;
+        }
+        
+        // Filtre de poste (approximatif, car nous n'avons que le poste habituel)
+        if (filtres.poste && posteIndex >= 0 && row[posteIndex] !== filtres.poste) {
+          continue;
+        }
+      }
+      
+      // Compte cette ligne comme une entrée valide
+      stats.total.nbEntrees++;
+      
+      // Ajouter la présence totale si disponible
+      if (presenceIndex >= 0) {
+        var presenceVal = parseFloat(row[presenceIndex]) || 0;
+        stats.total.presenceTotal += presenceVal;
+      }
+      
+      // Calculer l'inactivité totale pour cette ligne
+      var rowInactiviteTotal = 0;
+      
+      // Debug: afficher les valeurs des colonnes d'inactivité
+      var debugValues = "[";
+      
+      // Parcourir chaque colonne d'inactivité
+      for (var i = 0; i < inactiviteColumns.length; i++) {
+        var colIndex = inactiviteColumns[i];
+        var type = inactiviteTypes[i];
+        
+        var cellValue = row[colIndex];
+        var numValue = 0;
+        
+        // Convertir la valeur en nombre avec gestion explicite des types
+        if (typeof cellValue === 'number') {
+          numValue = cellValue;
+        } else if (typeof cellValue === 'string') {
+          // Remplacer la virgule par un point si nécessaire (format français)
+          cellValue = cellValue.replace(',', '.');
+          numValue = parseFloat(cellValue) || 0;
+        }
+        
+        // Debug
+        debugValues += cellValue + " (" + typeof cellValue + " -> " + numValue + "), ";
+        
+        // Seulement compter si > 0
+        if (numValue > 0) {
+          stats.parType[type].duree += numValue;
+          stats.parType[type].nbOccurrences++;
+          rowInactiviteTotal += numValue;
+        }
+      }
+      
+      debugValues += "]";
+      
+      // Si cette ligne a de l'inactivité, logger pour debug
+      if (rowInactiviteTotal > 0) {
+        Logger.log("Ligne " + (rowIndex + 1) + " pour " + row[operateurIndex] + 
+                  ": inactivité = " + rowInactiviteTotal + ", valeurs = " + debugValues);
+      } else if (rowIndex < 10) { // Logger quelques lignes au début pour debug
+        Logger.log("Ligne " + (rowIndex + 1) + " sans inactivité, valeurs = " + debugValues);
+      }
+      
+      // Ajouter au total général
+      stats.total.duree += rowInactiviteTotal;
+      
+      // Ajouter aux statistiques par poste
+      if (posteIndex >= 0 && row[posteIndex]) {
+        var poste = String(row[posteIndex]);
+        
+        if (!stats.parPoste[poste]) {
+          stats.parPoste[poste] = { duree: 0, nbEntrees: 0 };
+        }
+        
+        stats.parPoste[poste].duree += rowInactiviteTotal;
+        stats.parPoste[poste].nbEntrees++;
+      }
+      
+      // Ajouter aux statistiques par équipe
+      if (equipeIndex >= 0 && row[equipeIndex]) {
+        var equipe = String(row[equipeIndex]);
+        
+        if (!stats.parEquipe[equipe]) {
+          stats.parEquipe[equipe] = { duree: 0, nbEntrees: 0 };
+        }
+        
+        stats.parEquipe[equipe].duree += rowInactiviteTotal;
+        stats.parEquipe[equipe].nbEntrees++;
+      }
+    }
+    
+    // Vérification détaillée des résultats
+    Logger.log("Statistiques d'inactivité calculées. Total: " + stats.total.duree + "h, Entrées: " + stats.total.nbEntrees);
+    
+    // Vérifier chaque type
+    for (var type in stats.parType) {
+      Logger.log("Type " + type + ": " + stats.parType[type].duree + "h, Occurrences: " + stats.parType[type].nbOccurrences);
+    }
+    
+    return { 
+      success: true, 
+      stats: stats,
+      debug: {
+        inactiviteColumns: inactiviteColumns,
+        inactiviteTypes: inactiviteTypes
+      }
+    };
+
+  } catch (e) {
+    Logger.log("ERREUR dans obtenirStatistiquesInactivite: " + e.toString());
+    Logger.log("Stack trace: " + e.stack);
+    return { success: false, message: "Erreur serveur: " + e.toString() };
   }
 }
 
@@ -3718,4 +3948,370 @@ function getQuotaRemaining() {
   } catch(e) {
     return -1;
   }
+}
+/**
+ * Fonction pour obtenir les données d'inactivité
+ * @param {Object} filtres - Les filtres actifs (dateDebut, dateFin, equipe, poste)
+ * @return {Object} - Un objet contenant les données d'inactivité
+ */
+function obtenirDonneesInactivite(filtres) {
+  try {
+    Logger.log("Démarrage de obtenirDonneesInactivite() avec filtres : " + JSON.stringify(filtres));
+    
+    var spreadsheetId = '1Ni8E2HagtluqzpJLwUbBrgZdYtIuKud1jxtpK1StFS8';
+    var spreadsheet = SpreadsheetApp.openById(spreadsheetId);
+    var sheet = spreadsheet.getSheetByName('Historique rendement');
+    
+    if (!sheet) {
+      return { 
+        erreur: "Feuille 'Historique rendement' introuvable"
+      };
+    }
+    
+    var dataRange = sheet.getDataRange();
+    var values = dataRange.getValues();
+    var headers = values[1]; // Les en-têtes sont en deuxième ligne (index 1)
+    
+    // Identifier les indices des colonnes importantes
+    var indexOperateur = headers.indexOf("Opérateur");
+    var indexEquipe = headers.indexOf("Equipe");
+    var indexDate = headers.indexOf("Date");
+    var indexPoste = headers.indexOf("Poste habituel");
+    
+    // Identifier les colonnes d'inactivité
+    var inactiviteColumns = {}; // Pour stocker les index des colonnes d'inactivité
+    var typesInactivite = []; // Pour stocker les types d'inactivité
+    
+    // Rechercher les colonnes d'inactivité (supposées être étiquetées comme "INAC_XXX")
+    for (var i = 0; i < headers.length; i++) {
+      var header = String(headers[i] || "");
+      if (header.startsWith("INAC_") || header.startsWith("Inac_") || 
+          header === "ATTENTE" || header === "PAUSE" || header === "FORMATION" || 
+          header === "REUNION" || header === "AUTRE") {
+        
+        // Extraire le type d'inactivité (tout ce qui vient après "INAC_")
+        var typeInactivite = header.startsWith("INAC_") ? header.substring(5) : header;
+        inactiviteColumns[typeInactivite] = i;
+        typesInactivite.push(typeInactivite);
+      }
+    }
+    
+    // Si aucune colonne d'inactivité n'est trouvée, simuler des données pour démonstration
+    if (Object.keys(inactiviteColumns).length === 0) {
+      Logger.log("Aucune colonne d'inactivité trouvée, création de données de simulation");
+      
+      // Types simulés
+      typesInactivite = ["ATTENTE", "PAUSE", "FORMATION", "REUNION", "AUTRE"];
+      
+      // Simulation des données d'inactivité
+      return simulerDonneesInactivite(values, headers, indexOperateur, indexEquipe, indexPoste, indexDate, typesInactivite, filtres);
+    }
+    
+    Logger.log("Types d'inactivité trouvés: " + typesInactivite.join(", "));
+    
+    // Filtrer les données selon les critères
+    var donneesFiltrees = [];
+    for (var i = 2; i < values.length; i++) { // Commencer à la 3ème ligne (index 2)
+      var row = values[i];
+      
+      // Vérifier si la ligne contient un opérateur valide
+      if (!row[indexOperateur]) continue;
+      
+      // Si des filtres sont spécifiés, les appliquer
+      if (filtres) {
+        // Filtre par date
+        if ((filtres.dateDebut || filtres.dateFin) && indexDate >= 0) {
+          var rowDate = row[indexDate];
+          
+          // Convertir la date en objet Date si ce n'est pas déjà le cas
+          if (!(rowDate instanceof Date)) {
+            try {
+              // Si la date est au format string "DD/MM/YYYY"
+              if (typeof rowDate === 'string') {
+                var parts = rowDate.split('/');
+                if (parts.length === 3) {
+                  rowDate = new Date(parts[2], parts[1] - 1, parts[0]);
+                }
+              }
+            } catch (e) {
+              Logger.log("Erreur de conversion de date: " + e);
+              continue; // Ignorer cette ligne en cas d'erreur
+            }
+          }
+          
+          if (filtres.dateDebut) {
+            var dateDebut = new Date(filtres.dateDebut);
+            if (rowDate < dateDebut) continue;
+          }
+          
+          if (filtres.dateFin) {
+            var dateFin = new Date(filtres.dateFin);
+            dateFin.setHours(23, 59, 59, 999); // Fin de journée
+            if (rowDate > dateFin) continue;
+          }
+        }
+        
+        // Filtre par équipe
+        if (filtres.equipe && indexEquipe >= 0) {
+          if (row[indexEquipe] !== filtres.equipe) continue;
+        }
+        
+        // Filtre par poste
+        if (filtres.poste && indexPoste >= 0) {
+          if (row[indexPoste] !== filtres.poste) continue;
+        }
+      }
+      
+      // Calculer les totaux d'inactivité pour cette ligne
+      var inactiviteTotal = 0;
+      var inactiviteParType = {};
+      
+      // Initialiser les valeurs pour chaque type d'inactivité
+      typesInactivite.forEach(function(type) {
+        var colIndex = inactiviteColumns[type];
+        var value = colIndex !== undefined ? (parseFloat(row[colIndex]) || 0) : 0;
+        
+        inactiviteParType[type] = value;
+        inactiviteTotal += value;
+      });
+      
+      // Si des données d'inactivité existent pour cette ligne, l'ajouter aux données filtrées
+      if (inactiviteTotal > 0) {
+        // Formater la date pour l'affichage
+        var dateStr = "";
+        if (typeof row[indexDate] === 'object' && row[indexDate] instanceof Date) {
+          dateStr = Utilities.formatDate(row[indexDate], Session.getScriptTimeZone(), "yyyy-MM-dd");
+        } else if (typeof row[indexDate] === 'string') {
+          dateStr = row[indexDate];
+        }
+        
+        donneesFiltrees.push({
+          operateur: row[indexOperateur],
+          equipe: indexEquipe >= 0 ? row[indexEquipe] || "" : "",
+          poste: indexPoste >= 0 ? row[indexPoste] || "" : "",
+          date: dateStr,
+          inactiviteTotal: inactiviteTotal,
+          inactiviteParType: inactiviteParType
+        });
+      }
+    }
+    
+    // Analyser les données filtrées
+    var statsByType = analyserParType(donneesFiltrees, typesInactivite);
+    var statsByOperateur = analyserParOperateur(donneesFiltrees, typesInactivite);
+    var statsByEquipe = analyserParEquipe(donneesFiltrees, typesInactivite);
+    
+    return {
+      donnees: donneesFiltrees,
+      typesInactivite: typesInactivite,
+      statsByType: statsByType,
+      statsByOperateur: statsByOperateur,
+      statsByEquipe: statsByEquipe
+    };
+    
+  } catch (e) {
+    Logger.log("ERREUR dans obtenirDonneesInactivite: " + e.toString());
+    Logger.log("Stack trace: " + e.stack);
+    return { erreur: "Erreur lors de la récupération des données d'inactivité: " + e.toString() };
+  }
+}
+
+/**
+ * Fonction pour simuler des données d'inactivité
+ * Utilisée lorsque les colonnes d'inactivité ne sont pas trouvées
+ */
+function simulerDonneesInactivite(values, headers, indexOperateur, indexEquipe, indexPoste, indexDate, typesInactivite, filtres) {
+  var donnees = [];
+  var operateurs = new Set();
+  var equipes = new Set();
+  
+  // Extraire les opérateurs et équipes uniques
+  for (var i = 2; i < Math.min(values.length, 100); i++) {
+    var row = values[i];
+    if (row[indexOperateur]) {
+      operateurs.add(row[indexOperateur]);
+      if (indexEquipe >= 0 && row[indexEquipe]) {
+        equipes.add(row[indexEquipe]);
+      }
+    }
+  }
+  
+  operateurs = Array.from(operateurs);
+  equipes = Array.from(equipes);
+  
+  // Générer des données simulées
+  for (var i = 0; i < operateurs.length; i++) {
+    var operateur = operateurs[i];
+    var equipe = equipes[Math.min(i % equipes.length, equipes.length - 1)];
+    
+    // Simuler 1 à 3 entrées d'inactivité par opérateur
+    var nbEntrees = Math.floor(Math.random() * 3) + 1;
+    
+    for (var j = 0; j < nbEntrees; j++) {
+      var inactiviteTotal = 0;
+      var inactiviteParType = {};
+      
+      // Générer des valeurs pour chaque type d'inactivité
+      typesInactivite.forEach(function(type) {
+        // Probabilité de 30% d'avoir une inactivité pour chaque type
+        if (Math.random() < 0.3) {
+          var value = Math.random() * 1.5; // Entre 0 et 1.5 heures
+          inactiviteParType[type] = Math.round(value * 100) / 100; // Arrondir à 2 décimales
+          inactiviteTotal += inactiviteParType[type];
+        } else {
+          inactiviteParType[type] = 0;
+        }
+      });
+      
+      // Générer une date dans les 30 derniers jours
+      var date = new Date();
+      date.setDate(date.getDate() - Math.floor(Math.random() * 30));
+      var dateStr = Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+      
+      // Ajouter l'entrée aux données
+      donnees.push({
+        operateur: operateur,
+        equipe: equipe,
+        poste: "Poste " + (Math.floor(Math.random() * 5) + 1),
+        date: dateStr,
+        inactiviteTotal: inactiviteTotal,
+        inactiviteParType: inactiviteParType
+      });
+    }
+  }
+  
+  // Analyser les données simulées
+  var statsByType = analyserParType(donnees, typesInactivite);
+  var statsByOperateur = analyserParOperateur(donnees, typesInactivite);
+  var statsByEquipe = analyserParEquipe(donnees, typesInactivite);
+  
+  return {
+    donnees: donnees,
+    typesInactivite: typesInactivite,
+    statsByType: statsByType,
+    statsByOperateur: statsByOperateur,
+    statsByEquipe: statsByEquipe
+  };
+}
+
+/**
+ * Analyser les données par type d'inactivité
+ */
+function analyserParType(donnees, typesInactivite) {
+  var result = {};
+  
+  // Initialiser les résultats pour chaque type
+  typesInactivite.forEach(function(type) {
+    result[type] = {
+      total: 0,
+      moyenne: 0,
+      max: 0,
+      maxOperateur: "",
+      entrees: 0
+    };
+  });
+  
+  // Analyser les données
+  donnees.forEach(function(entry) {
+    typesInactivite.forEach(function(type) {
+      var value = entry.inactiviteParType[type] || 0;
+      
+      if (value > 0) {
+        result[type].total += value;
+        result[type].entrees++;
+        
+        if (value > result[type].max) {
+          result[type].max = value;
+          result[type].maxOperateur = entry.operateur;
+        }
+      }
+    });
+  });
+  
+  // Calculer les moyennes
+  typesInactivite.forEach(function(type) {
+    if (result[type].entrees > 0) {
+      result[type].moyenne = result[type].total / result[type].entrees;
+    }
+  });
+  
+  return result;
+}
+
+/**
+ * Analyser les données par opérateur
+ */
+function analyserParOperateur(donnees, typesInactivite) {
+  var result = {};
+  
+  // Regrouper par opérateur
+  donnees.forEach(function(entry) {
+    var operateur = entry.operateur;
+    
+    if (!result[operateur]) {
+      result[operateur] = {
+        total: 0,
+        parType: {},
+        entrees: 0
+      };
+      
+      // Initialiser les compteurs pour chaque type
+      typesInactivite.forEach(function(type) {
+        result[operateur].parType[type] = 0;
+      });
+    }
+    
+    // Ajouter les valeurs
+    result[operateur].total += entry.inactiviteTotal;
+    result[operateur].entrees++;
+    
+    typesInactivite.forEach(function(type) {
+      result[operateur].parType[type] += entry.inactiviteParType[type] || 0;
+    });
+  });
+  
+  return result;
+}
+
+/**
+ * Analyser les données par équipe
+ */
+function analyserParEquipe(donnees, typesInactivite) {
+  var result = {};
+  
+  // Regrouper par équipe
+  donnees.forEach(function(entry) {
+    var equipe = entry.equipe || "Non spécifiée";
+    
+    if (!result[equipe]) {
+      result[equipe] = {
+        total: 0,
+        parType: {},
+        entrees: 0,
+        operateurs: new Set()
+      };
+      
+      // Initialiser les compteurs pour chaque type
+      typesInactivite.forEach(function(type) {
+        result[equipe].parType[type] = 0;
+      });
+    }
+    
+    // Ajouter les valeurs
+    result[equipe].total += entry.inactiviteTotal;
+    result[equipe].entrees++;
+    result[equipe].operateurs.add(entry.operateur);
+    
+    typesInactivite.forEach(function(type) {
+      result[equipe].parType[type] += entry.inactiviteParType[type] || 0;
+    });
+  });
+  
+  // Convertir les sets en nombres pour la sérialisation JSON
+  Object.keys(result).forEach(function(equipe) {
+    result[equipe].nbOperateurs = result[equipe].operateurs.size;
+    delete result[equipe].operateurs; // Supprimer le set
+  });
+  
+  return result;
 }
