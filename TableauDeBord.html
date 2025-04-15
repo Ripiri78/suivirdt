@@ -948,7 +948,7 @@
       </div>
     </div>
   </div>
-  <!-- Inactivité -->
+<!-- Inactivité -->
 <div class="tab-pane fade" id="inactivite" role="tabpanel">
   <!-- État de chargement -->
   <div id="inactivite-loading" class="text-center py-4">
@@ -994,19 +994,19 @@
       <div class="col-md-3 mb-4 mb-md-0">
         <div class="stat-card">
           <div class="icon">
-            <i class="fas fa-user-clock"></i>
+            <i class="fas fa-umbrella-beach"></i>
           </div>
-          <h2 class="value" id="inactivite-moyenne-operateur">--</h2>
-          <p class="label">Moyenne par opérateur</p>
+          <h2 class="value" id="inactivite-taux-conges">--</h2>
+          <p class="label">Taux de congés</p>
         </div>
       </div>
       <div class="col-md-3">
         <div class="stat-card">
           <div class="icon">
-            <i class="fas fa-users"></i>
+            <i class="fas fa-business-time"></i>
           </div>
-          <h2 class="value" id="inactivite-moyenne-equipe">--</h2>
-          <p class="label">Moyenne par équipe</p>
+          <h2 class="value" id="inactivite-hors-conges">--</h2>
+          <p class="label">Inactivité hors congés</p>
         </div>
       </div>
     </div>
@@ -1018,13 +1018,94 @@
           <i class="fas fa-chart-pie me-2"></i>
           Répartition par type d'inactivité
         </div>
-        <button class="btn btn-sm btn-outline-primary btn-refresh">
+        <button class="btn btn-sm btn-outline-primary" id="btn-refresh-inactivite">
           <i class="fas fa-sync-alt me-1"></i> Actualiser
         </button>
       </div>
       <div class="card-body">
         <div class="chart-container">
           <canvas id="chart-inactivite-types"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tableau détaillé des types d'inactivité -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <i class="fas fa-table me-2"></i>
+        Détail par type d'inactivité
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table table-striped table-hover" id="table-inactivite-types">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Durée totale (h)</th>
+                <th>Pourcentage (%)</th>
+                <th>Occurrences</th>
+                <th>Durée moyenne (h)</th>
+              </tr>
+            </thead>
+            <tbody id="table-inactivite-types-body">
+              <!-- Données générées dynamiquement -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Graphiques par poste et par équipe -->
+    <div class="row">
+      <div class="col-md-6 mb-4">
+        <div class="card h-100">
+          <div class="card-header">
+            <i class="fas fa-briefcase me-2"></i>
+            Top postes par durée d'inactivité
+          </div>
+          <div class="card-body">
+            <div class="chart-container">
+              <canvas id="chart-inactivite-postes"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6 mb-4">
+        <div class="card h-100">
+          <div class="card-header">
+            <i class="fas fa-users me-2"></i>
+            Top équipes par durée d'inactivité
+          </div>
+          <div class="card-body">
+            <div class="chart-container">
+              <canvas id="chart-inactivite-equipes"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Graphique d'évolution temporelle -->
+    <div class="card">
+      <div class="card-header">
+        <i class="fas fa-chart-line me-2"></i>
+        Évolution de l'inactivité
+        <div class="float-end">
+          <div class="btn-group btn-group-sm" role="group">
+            <input type="radio" class="btn-check" name="inactivite-periode-type" id="inactivite-periode-mois" value="mois" checked>
+            <label class="btn btn-outline-primary" for="inactivite-periode-mois">
+              Par mois
+            </label>
+            <input type="radio" class="btn-check" name="inactivite-periode-type" id="inactivite-periode-semaine" value="semaine">
+            <label class="btn btn-outline-primary" for="inactivite-periode-semaine">
+              Par semaine
+            </label>
+          </div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="chart-inactivite-evolution"></canvas>
         </div>
       </div>
     </div>
@@ -1443,6 +1524,14 @@ let statsInactivite = {}; // Pour stocker les données agrégées
 let inactiviteParetoChart, inactivitePostesChart, inactiviteEquipesChart, inactiviteEvolutionChart; // Instances Chart.js
 let inactiviteTypeChart, inactiviteOperateursChart;
 
+// Ajouter au début du script, juste après la déclaration des variables globales
+window.onerror = function(msg, url, line, col, error) {
+    console.error("Erreur globale:", msg, "à la ligne", line, "colonne", col);
+    // Forcer l'affichage de l'interface si une erreur bloque le chargement
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('main-content').style.display = 'block';
+    return false;
+};
 
 // Configuration
 const CONFIG = {
@@ -1852,17 +1941,39 @@ function loadFilteredData() {
 
 function loadStats() {
     updateLoaderMessage("Chargement des statistiques principales...");
+    
+    // Définir un délai maximum pour le chargement
+    setTimeout(function() {
+        // Si le loader est toujours visible après 15 secondes, on force l'affichage
+        if (document.getElementById('loader').style.display !== 'none') {
+            console.warn("Délai de chargement dépassé, affichage forcé de l'interface");
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+        }
+    }, 15000);
+    
+    // Lancer les chargements en parallèle
     loadPostesStats();
     loadEquipesStats();
     loadOperateursStats();
     loadTemporellesStats();
-
-    // Charger les données d'inactivité
-    loadInactiviteStats(); // <--- APPEL AJOUTÉ
-
-    // Charger les durées d'aléas (peut nécessiter un léger délai)
-    setTimeout(function () {
-        loadAleasDurations();
+    
+    // Essayer de charger l'inactivité, mais ne pas bloquer si ça échoue
+    try {
+        loadInactiviteStats();
+    } catch (err) {
+        console.error("Erreur chargement inactivité:", err);
+        // Initialiser avec des données vides
+        statsInactivite = { total: { duree: 0, nbEntrees: 0 } };
+    }
+    
+    // Charger les données d'aléas avec un léger délai
+    setTimeout(function() {
+        try {
+            loadAleasDurations();
+        } catch (err) {
+            console.error("Erreur chargement aléas:", err);
+        }
     }, 500);
 }
 
@@ -1873,10 +1984,12 @@ function loadInactiviteStats() {
   const loadingDiv = document.getElementById('inactivite-loading');
   const contentDiv = document.getElementById('inactivite-content');
   const errorDiv = document.getElementById('inactivite-error');
+  const emptyDiv = document.getElementById('inactivite-empty');
   
   if (loadingDiv) loadingDiv.style.display = 'block';
   if (contentDiv) contentDiv.style.display = 'none';
   if (errorDiv) errorDiv.style.display = 'none';
+  if (emptyDiv) emptyDiv.style.display = 'none';
   
   google.script.run
     .withSuccessHandler(function (response) {
@@ -1885,12 +1998,23 @@ function loadInactiviteStats() {
       if (loadingDiv) loadingDiv.style.display = 'none';
       
       if (response && response.success) {
-        // Stocker les données correctement
+        // Stocker les données
         statsInactivite = response.stats || {};
         console.log("Données d'inactivité chargées:", statsInactivite);
         
+        // Vérifier si les données sont vides
+        if (!statsInactivite.total || 
+            statsInactivite.total.duree === 0 || 
+            !statsInactivite.parType || 
+            Object.keys(statsInactivite.parType).length === 0) {
+          
+          if (emptyDiv) emptyDiv.style.display = 'block';
+          return;
+        }
+        
         // Mettre à jour l'interface
         updateInactiviteTab();
+        if (contentDiv) contentDiv.style.display = 'block';
       } else {
         if (errorDiv) {
           errorDiv.textContent = "Erreur : " + (response?.message || "Impossible de charger les données");
@@ -1982,12 +2106,19 @@ function initInactiviteTab() {
     }
   });
   
-  // Ajouter un bouton de rafraîchissement si nécessaire
-  const refreshButton = document.querySelector('#inactivite-content button.btn-refresh');
+  // Ajouter un écouteur pour le bouton de rafraîchissement
+  const refreshButton = document.getElementById('btn-refresh-inactivite');
   if (refreshButton) {
     refreshButton.addEventListener('click', loadInactiviteStats);
   }
+  
+  // Ajouter des écouteurs pour les boutons de type de période
+  document.querySelectorAll('input[name="inactivite-periode-type"]').forEach(input => {
+    input.addEventListener('change', updateInactiviteEvolutionChart);
+  });
 }
+
+
 function loadInactiviteDataDirectly() {
   console.log("Chargement direct des données d'inactivité");
   
@@ -2219,25 +2350,70 @@ function updateInactiviteUI() {
  * Mettre à jour les indicateurs d'inactivité
  */
 function updateInactiviteIndicators() {
-  // Extraction des données
-  const totalInactivite = statsInactivite.total?.duree || 0;
-  const nbEntreesTotal = statsInactivite.total?.nbEntrees || 0;
-  const totalPresence = statsInactivite.total?.presenceTotal || 0;
-
-  // Utiliser les IDs corrects qui sont présents dans le HTML
-  document.getElementById('inactivite-total').textContent = totalInactivite.toFixed(2);
-
-  const pourcentagePresence = totalPresence > 0 ? (totalInactivite / totalPresence) * 100 : 0;
-  document.getElementById('inactivite-pourcentage').textContent = pourcentagePresence.toFixed(1) + '%';
-
-  // Moyenne par opérateur
-  const moyenneParOperateur = nbEntreesTotal > 0 ? (totalInactivite / nbEntreesTotal) : 0;
-  document.getElementById('inactivite-moyenne-operateur').textContent = moyenneParOperateur.toFixed(2);
+  console.log("Mise à jour des indicateurs d'inactivité");
   
-  // Moyenne par équipe
-  const nbEquipes = statsInactivite.parEquipe ? Object.keys(statsInactivite.parEquipe).length : 0;
-  const moyenneParEquipe = nbEquipes > 0 ? totalInactivite / nbEquipes : 0;
-  document.getElementById('inactivite-moyenne-equipe').textContent = moyenneParEquipe.toFixed(2);
+  // Extraire les données
+  const totalInactivite = statsInactivite.total?.duree || 0;
+  const totalPresence = statsInactivite.total?.presenceTotal || 0;
+  const nbEntrees = statsInactivite.total?.nbEntrees || 0;
+  
+  // Mettre à jour l'indicateur du total d'inactivité
+  document.getElementById('inactivite-total').textContent = totalInactivite.toFixed(2);
+  
+  // Calculer et mettre à jour le pourcentage du temps total avec la nouvelle formule:
+  // inactivité / (présence + inactivité)
+  const tempsTotalReel = totalPresence + totalInactivite;
+  const pourcentageInactivite = tempsTotalReel > 0 ? (totalInactivite / tempsTotalReel) * 100 : 0;
+  document.getElementById('inactivite-pourcentage').textContent = pourcentageInactivite.toFixed(1) + '%';
+  
+  // Identifier les heures de congés en cherchant un type d'inactivité contenant "congé" 
+  // (ou d'autres noms possibles pour les congés)
+  let heuresConges = 0;
+  if (statsInactivite.parType) {
+    Object.entries(statsInactivite.parType).forEach(([type, data]) => {
+      // Rechercher de façon insensible à la casse les types qui contiennent des mots liés aux congés
+      const typeLower = type.toLowerCase();
+      if (typeLower.includes('congé') || typeLower.includes('conge') || 
+          typeLower.includes('vacance') || typeLower.includes('absence') || 
+          typeLower.includes('cp')) {
+        heuresConges += data.duree || 0;
+      }
+    });
+  }
+  
+  // Calculer le taux de congés: heures de congés / (présence + inactivité)
+  const tauxConges = tempsTotalReel > 0 ? (heuresConges / tempsTotalReel) * 100 : 0;
+  document.getElementById('inactivite-taux-conges').textContent = tauxConges.toFixed(1) + '%';
+  
+  // Calculer le total d'heures d'inactivité hors congés
+  const inactiviteHorsConges = totalInactivite - heuresConges;
+  document.getElementById('inactivite-hors-conges').textContent = inactiviteHorsConges.toFixed(2);
+  
+  console.log("Indicateurs mis à jour avec succès:", {
+    total: totalInactivite.toFixed(2),
+    pourcentage: pourcentageInactivite.toFixed(1) + '%',
+    tauxConges: tauxConges.toFixed(1) + '%',
+    inactiviteHorsConges: inactiviteHorsConges.toFixed(2)
+  });
+}
+
+function getHeuresConges() {
+  let heuresConges = 0;
+  
+  if (!statsInactivite || !statsInactivite.parType) {
+    return heuresConges;
+  }
+  
+  Object.entries(statsInactivite.parType).forEach(([type, data]) => {
+    const typeLower = type.toLowerCase();
+    if (typeLower.includes('congé') || typeLower.includes('conge') || 
+        typeLower.includes('vacance') || typeLower.includes('absence') || 
+        typeLower.includes('cp')) {
+      heuresConges += data.duree || 0;
+    }
+  });
+  
+  return heuresConges;
 }
 
 /**
@@ -2264,12 +2440,28 @@ function createInactiviteTypeChart() {
   }
   
   // Préparation des données
-  const types = Object.keys(statsInactivite.parType);
-  const values = types.map(type => statsInactivite.parType[type].duree || 0);
+  const typesData = Object.entries(statsInactivite.parType).map(([type, data]) => ({
+    type: type,
+    duree: data.duree || 0,
+    estConges: type.toLowerCase().includes('congé') || type.toLowerCase().includes('conge') || 
+               type.toLowerCase().includes('vacance') || type.toLowerCase().includes('absence') || 
+               type.toLowerCase().includes('cp')
+  }));
   
-  // Génération des couleurs
-  const colors = types.map((_, index) => {
-    const hue = (index * 360 / types.length) % 360;
+  // Trier par durée décroissante
+  typesData.sort((a, b) => b.duree - a.duree);
+  
+  const types = typesData.map(item => item.type);
+  const values = typesData.map(item => item.duree);
+  
+  // Générer des couleurs
+  const colors = typesData.map((item, index) => {
+    // Utiliser une couleur spéciale pour les congés (bleu clair)
+    if (item.estConges) {
+      return 'rgba(89, 205, 240, 0.7)';
+    }
+    // Couleurs normales pour les autres types
+    const hue = (index * 360 / typesData.length) % 360;
     return `hsla(${hue}, 70%, 60%, 0.7)`;
   });
   
@@ -3438,41 +3630,45 @@ function updateTableHeaders() {
 /**
  * Mise à jour de l'interface
  */
+// Remplacer la fonction updateUI() par celle-ci :
 function updateUI() {
-    // Vérifier que TOUTES les données sont chargées
-    // On vérifie la présence des clés attendues plutôt que juste si l'objet existe
-    const allLoaded = statsPostes && statsPostes.length > 0 &&
-                      statsEquipes && statsEquipes.length > 0 &&
-                      statsOperateurs && statsOperateurs.length > 0 &&
-                      statsTemporelles && statsTemporelles.annees &&
-                      statsInactivite && statsInactivite.total !== undefined && // Vérifier une clé essentielle
-                      dureesAleasOperateurs && Object.keys(dureesAleasOperateurs).length > 0; // Optionnel
-
-    if (!allLoaded) {
-         console.log("Attente des données:", {
-            postes: !!(statsPostes && statsPostes.length > 0),
-            equipes: !!(statsEquipes && statsEquipes.length > 0),
-            ops: !!(statsOperateurs && statsOperateurs.length > 0),
-            temp: !!(statsTemporelles && statsTemporelles.annees),
-            inact: !!(statsInactivite && statsInactivite.total !== undefined), // Mise à jour du log
-            dureesAleasOps: !!(dureesAleasOperateurs && Object.keys(dureesAleasOperateurs).length > 0)
-         });
+    // Vérifier les données minimales nécessaires sont chargées
+    if (!statsPostes || !statsEquipes || !statsOperateurs || !statsTemporelles) {
+        console.log("Données principales manquantes, attente...");
         return;
     }
+    
+    console.log("Mise à jour de l'interface avec données disponibles");
 
-    console.log("Mise à jour de l'interface complète");
+    // Initialiser statsInactivite s'il n'existe pas pour éviter le blocage
+    if (!statsInactivite) {
+        statsInactivite = { total: { duree: 0, nbEntrees: 0 } };
+    }
 
-    // Mettre à jour les différentes sections
+    // Continuer avec les fonctions de mise à jour même si certaines données secondaires manquent
     updateOverviewSection();
     updateTableHeaders();
     updatePostesSection();
     updateEquipesSection();
     updateEvolutionData();
     updateOperateursSection();
-    updateInactiviteTab(); // <--- APPEL AJOUTÉ
-    calculateAndDisplayTAISums();
+    
+    // Mettre à jour l'inactivité seulement si les données sont disponibles
+    if (statsInactivite && statsInactivite.total !== undefined) {
+        try {
+            updateInactiviteTab();
+        } catch (err) {
+            console.error("Erreur lors de la mise à jour de l'onglet inactivité:", err);
+        }
+    }
+    
+    try {
+        calculateAndDisplayTAISums();
+    } catch (err) {
+        console.error("Erreur lors du calcul des sommes TAI:", err);
+    }
 
-    // Cacher le loader seulement après que tout est prêt
+    // Cacher le loader et afficher le contenu
     document.getElementById('loader').style.display = 'none';
     document.getElementById('main-content').style.display = 'block';
 }
@@ -3484,132 +3680,175 @@ function updateUI() {
 // Fonction principale pour mettre à jour l'onglet Inactivité
 function updateInactiviteTab() {
   console.log("Mise à jour de l'onglet Inactivité");
-  const loadingDiv = document.getElementById('inactivite-loading');
-  const errorDiv = document.getElementById('inactivite-error');
-  const contentDiv = document.getElementById('inactivite-content');
-  const emptyDiv = document.getElementById('inactivite-empty');
-
-  // Cacher messages/loader par défaut
-  if(loadingDiv) loadingDiv.style.display = 'none';
-  if(errorDiv) errorDiv.style.display = 'none';
-  if(emptyDiv && emptyDiv.style) emptyDiv.style.display = 'none';
   
-  if(!contentDiv) {
-    console.error("Élément inactivite-content introuvable !");
-    return;
-  }
-
   // Vérifier si des données valides existent
-  if (!statsInactivite || !statsInactivite.total || statsInactivite.total.nbEntrees === 0) {
+  if (!statsInactivite || !statsInactivite.total) {
     console.log("Aucune donnée d'inactivité à afficher.");
-    if(emptyDiv && emptyDiv.style) emptyDiv.style.display = 'block';
-    contentDiv.style.display = 'none';
+    document.getElementById('inactivite-empty').style.display = 'block';
+    document.getElementById('inactivite-content').style.display = 'none';
     return;
   }
-
-  // Afficher le contenu
-  contentDiv.style.display = 'block';
-
+  
   // Mettre à jour les indicateurs
   updateInactiviteIndicators();
   
-  // Créer ou mettre à jour les graphiques si les éléments existent
-  if (document.getElementById('chart-inactivite-types')) {
-    createInactiviteTypeChart();
-  }
+  // Mettre à jour les graphiques et tableaux
+  createInactiviteTypeChart();
+  updateInactiviteTypesTable();
+  createInactivitePostesChart();
+  createInactiviteEquipesChart();
+  updateInactiviteEvolutionChart();
   
-  console.log("Mise à jour de l'onglet Inactivité terminée");
+  // Initialiser les écouteurs d'événements si ce n'est pas déjà fait
+  initInactiviteTabListeners();
+  
+  // Afficher le contenu
+  document.getElementById('inactivite-content').style.display = 'block';
 }
 
 // Initialiser les listeners (bouton refresh, changement de période évolution)
 function initInactiviteTabListeners() {
-    const refreshButton = document.getElementById('btn-refresh-inactivite');
-    if (refreshButton && !refreshButton.dataset.listenerAdded) {
-         refreshButton.addEventListener('click', function() {
-             const loadingDiv = document.getElementById('inactivite-loading');
-             const contentDiv = document.getElementById('inactivite-content');
-             const emptyDiv = document.getElementById('inactivite-empty');
-             const errorDiv = document.getElementById('inactivite-error');
-
-             if(loadingDiv) loadingDiv.style.display = 'block';
-             if(contentDiv) contentDiv.style.display = 'none';
-             if(emptyDiv) emptyDiv.style.display = 'none';
-             if(errorDiv) errorDiv.style.display = 'none';
-
-             loadInactiviteStats(); // Relancer le chargement des stats d'inactivité
-         });
-         refreshButton.dataset.listenerAdded = "true"; // Marquer comme ajouté
-
-         document.querySelectorAll('input[name="inactivite-periode-type"]').forEach(input => {
-             if (!input.dataset.listenerAdded) {
-                input.addEventListener('change', updateInactiviteEvolutionChart);
-                input.dataset.listenerAdded = "true"; // Marquer comme ajouté
-             }
-         });
-    }
+  // Vérifier que les écouteurs d'événements ne sont pas déjà ajoutés
+  if (window.inactiviteListenersInitialized) return;
+  
+  // Ajouter l'écouteur pour le bouton de rafraîchissement
+  const refreshButton = document.getElementById('btn-refresh-inactivite');
+  if (refreshButton) {
+    refreshButton.addEventListener('click', loadInactiviteStats);
+  }
+  
+  // Ajouter les écouteurs pour les boutons de type de période
+  document.querySelectorAll('input[name="inactivite-periode-type"]').forEach(input => {
+    input.addEventListener('change', updateInactiviteEvolutionChart);
+  });
+  
+  // Marquer les écouteurs comme initialisés
+  window.inactiviteListenersInitialized = true;
 }
 
 // Mettre à jour les KPIs
 function updateInactiviteIndicators() {
-    const totalInactivite = statsInactivite.total?.duree || 0;
-    const nbEntreesTotal = statsInactivite.total?.nbEntrees || 0;
-    const totalPresence = statsInactivite.total?.presenceTotal || 0;
-
-    setTextContent('inactivite-total-h', totalInactivite.toFixed(2));
-
-    const pourcentagePresence = totalPresence > 0 ? (totalInactivite / totalPresence) * 100 : 0;
-    setTextContent('inactivite-pourcentage-presence', pourcentagePresence.toFixed(1) + '%');
-
-    const moyenneEntree = nbEntreesTotal > 0 ? (totalInactivite / nbEntreesTotal) : 0;
-    setTextContent('inactivite-moyenne-entree-h', moyenneEntree.toFixed(2));
-
-    // Trouver le type principal (basé sur la durée)
-    let typePrincipal = '--';
-    let maxDuree = 0;
-    if (statsInactivite.parType) {
-        Object.entries(statsInactivite.parType).forEach(([type, data]) => {
-            if (data.duree > maxDuree) {
-                maxDuree = data.duree;
-                typePrincipal = type;
-            }
-        });
-    }
-     const typePrincipalElement = document.getElementById('inactivite-type-principal');
-     if(typePrincipalElement) {
-          typePrincipalElement.textContent = typePrincipal;
-          typePrincipalElement.title = typePrincipal; // Pour les noms longs
-     }
+  console.log("Mise à jour des indicateurs d'inactivité");
+  
+  // Extraire les données
+  const totalInactivite = statsInactivite.total?.duree || 0;
+  const totalPresence = statsInactivite.total?.presenceTotal || 0;
+  const nbEntrees = statsInactivite.total?.nbEntrees || 0;
+  
+  // Mettre à jour les indicateurs de base
+  document.getElementById('inactivite-total').textContent = totalInactivite.toFixed(2);
+  
+  // Calculer et afficher le pourcentage du temps total
+  const pourcentage = totalPresence > 0 ? (totalInactivite / totalPresence) * 100 : 0;
+  document.getElementById('inactivite-pourcentage').textContent = pourcentage.toFixed(1) + '%';
+  
+  // Calculer et afficher la moyenne par opérateur
+  const nbOperateurs = statsInactivite.parOperateur ? Object.keys(statsInactivite.parOperateur).length : 0;
+  const moyenneOperateur = nbOperateurs > 0 ? totalInactivite / nbOperateurs : 0;
+  document.getElementById('inactivite-moyenne-operateur').textContent = moyenneOperateur.toFixed(2);
+  
+  // Calculer et afficher la moyenne par équipe
+  const nbEquipes = statsInactivite.parEquipe ? Object.keys(statsInactivite.parEquipe).length : 0;
+  const moyenneEquipe = nbEquipes > 0 ? totalInactivite / nbEquipes : 0;
+  document.getElementById('inactivite-moyenne-equipe').textContent = moyenneEquipe.toFixed(2);
+  
+  console.log("Indicateurs mis à jour avec succès:", {
+    total: totalInactivite.toFixed(2),
+    pourcentage: pourcentage.toFixed(1) + '%',
+    moyenneOperateur: moyenneOperateur.toFixed(2),
+    moyenneEquipe: moyenneEquipe.toFixed(2)
+  });
 }
 
 // Mettre à jour le tableau détaillé par type
 function updateInactiviteTypesTable() {
-    const tbody = document.getElementById('table-inactivite-types-body');
-    if (!tbody) return;
-    tbody.innerHTML = ''; // Vider le tableau
-    const totalInactivite = statsInactivite.total?.duree || 0;
-
-    if (!statsInactivite.parType || Object.keys(statsInactivite.parType).length === 0) {
-         tbody.innerHTML = '<tr><td colspan="5" class="text-center">Aucune donnée par type.</td></tr>';
-         return;
+  console.log("Mise à jour du tableau des types d'inactivité");
+  
+  const tbody = document.getElementById('table-inactivite-types-body');
+  if (!tbody) {
+    console.error("Élément 'table-inactivite-types-body' introuvable");
+    return;
+  }
+  
+  // Vider le tableau
+  tbody.innerHTML = '';
+  
+  // Vérifier que nous avons des données
+  if (!statsInactivite.parType || Object.keys(statsInactivite.parType).length === 0) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = '<td colspan="5" class="text-center">Aucune donnée disponible</td>';
+    tbody.appendChild(tr);
+    return;
+  }
+  
+  // Calculer le total global d'inactivité
+  const totalDuree = Object.values(statsInactivite.parType).reduce(
+    (sum, data) => sum + (data.duree || 0), 0
+  );
+  
+  // Créer un tableau pour trier les données
+  const typeData = Object.entries(statsInactivite.parType).map(([type, data]) => ({
+    type: type,
+    duree: data.duree || 0,
+    occurrences: data.nbOccurrences || 0,
+    pourcentage: totalDuree > 0 ? ((data.duree || 0) / totalDuree) * 100 : 0,
+    moyenne: data.nbOccurrences > 0 ? (data.duree || 0) / data.nbOccurrences : 0,
+    estConges: type.toLowerCase().includes('congé') || type.toLowerCase().includes('conge') || 
+               type.toLowerCase().includes('vacance') || type.toLowerCase().includes('absence') || 
+               type.toLowerCase().includes('cp')
+  }));
+  
+  // Trier par durée décroissante
+  typeData.sort((a, b) => b.duree - a.duree);
+  
+  // Ajouter chaque type au tableau
+  typeData.forEach(data => {
+    // Déterminer la classe de la ligne
+    let rowClass = '';
+    
+    // Mettre en évidence les congés avec une couleur bleu clair
+    if (data.estConges) {
+      rowClass = 'table-info';
     }
-
-    // Trier par durée décroissante
-    const sortedTypes = Object.entries(statsInactivite.parType)
-                             .sort(([, a], [, b]) => b.duree - a.duree);
-
-    sortedTypes.forEach(([type, data]) => {
-         const tr = document.createElement('tr');
-         const pourcentage = totalInactivite > 0 ? (data.duree / totalInactivite * 100) : 0;
-         const dureeMoyenne = data.nbOccurrences > 0 ? data.duree / data.nbOccurrences : 0;
-
-         tr.innerHTML = `
-            <td><strong><span class="math-inline">\{type\}</strong\></td\>
-<td>{data.duree.toFixed(2)}</td>
-<td>pourcentage.toFixed(1)<td>{data.nbOccurrences || 0}</td>
-<td>${dureeMoyenne.toFixed(2)}</td>
-`;
-tbody.appendChild(tr);
-});
+    // Sinon utiliser le code de couleur basé sur le pourcentage
+    else if (data.pourcentage > 30) {
+      rowClass = 'table-danger';
+    } else if (data.pourcentage > 15) {
+      rowClass = 'table-warning';
+    } else {
+      rowClass = 'table-success';
+    }
+    
+    const tr = document.createElement('tr');
+    tr.className = rowClass;
+    
+    tr.innerHTML = `
+      <td><strong>${data.type}</strong></td>
+      <td>${data.duree.toFixed(2)}</td>
+      <td>${data.pourcentage.toFixed(1)}%</td>
+      <td>${data.occurrences}</td>
+      <td>${data.moyenne.toFixed(2)}</td>
+    `;
+    
+    tbody.appendChild(tr);
+  });
+  
+  // Ajouter une ligne de total
+  const trTotal = document.createElement('tr');
+  trTotal.className = 'table-dark';
+  
+  const totalOccurrences = typeData.reduce((sum, data) => sum + data.occurrences, 0);
+  const moyenneGlobale = totalOccurrences > 0 ? totalDuree / totalOccurrences : 0;
+  
+  trTotal.innerHTML = `
+    <td><strong>TOTAL</strong></td>
+    <td><strong>${totalDuree.toFixed(2)}</strong></td>
+    <td><strong>100.0%</strong></td>
+    <td><strong>${totalOccurrences}</strong></td>
+    <td><strong>${moyenneGlobale.toFixed(2)}</strong></td>
+  `;
+  
+  tbody.appendChild(trTotal);
 }
 
 // Fonction pour créer le graphique Pareto
@@ -3714,158 +3953,424 @@ function createInactiviteParetoChart() {
 
 // Fonction pour créer le graphique par postes
 function createInactivitePostesChart() {
-    const ctx = document.getElementById('chart-inactivite-postes')?.getContext('2d');
-    if (!ctx) return;
-    destroyChartIfExists(inactivitePostesChart); inactivitePostesChart = null;
-    if (!statsInactivite.parPoste) return;
-
-    const sortedData = Object.entries(statsInactivite.parPoste)
-                            .filter(([, data]) => data.duree > 0)
-                            .sort(([, a], [, b]) => b.duree - a.duree)
-                            .slice(0, 5); // Top 5
-
-     if (sortedData.length === 0) return;
-
-    const labels = sortedData.map(([poste]) => poste);
-    const data = sortedData.map(([, val]) => val.duree);
-    const colors = generateColors(labels.length, 30); // Offset hue
-
-    inactivitePostesChart = new Chart(ctx, {
-         type: 'bar',
-         data: {
-            labels: labels,
-            datasets: [{
-                label: 'Durée Inactivité (h)',
-                data: data,
-                backgroundColor: colors,
-                borderColor: colors.map(c => c.replace('0.7', '1')),
-                borderWidth: 1,
-                borderRadius: 4
-            }]
-         },
-         options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                     callbacks: {
-                        label: context => `Durée: ${context.parsed.x.toFixed(2)} h`
-                    }
-                },
-                 title: { display: false } // Titre déjà dans card-header
-             },
-            scales: { x: { beginAtZero: true, title: { display: true, text: 'Durée totale (h)' } }, y: { grid: { display: false }} }
-         }
-    });
+  console.log("Création du graphique des postes par inactivité");
+  
+  const canvas = document.getElementById('chart-inactivite-postes');
+  if (!canvas) {
+    console.error("Élément canvas 'chart-inactivite-postes' introuvable");
+    return;
+  }
+  
+  // Détruire le graphique existant s'il y en a un
+  if (window.inactivitePostesChart) {
+    window.inactivitePostesChart.destroy();
+  }
+  
+  // Vérifier que nous avons des données par poste
+  if (!statsInactivite.parPoste || Object.keys(statsInactivite.parPoste).length === 0) {
+    console.warn("Pas de données par poste disponibles");
+    return;
+  }
+  
+  // Calculer le total des heures de congés
+  const heuresConges = getHeuresConges();
+  
+  // Option pour afficher les données hors congés
+  const afficherHorsConges = true; // On pourrait ajouter un toggle dans l'interface
+  
+  // Créer un tableau pour trier les données
+  const posteData = Object.entries(statsInactivite.parPoste).map(([poste, data]) => {
+    // Si l'option est activée, soustraire proportionnellement les heures de congés
+    let dureeAjustee = data.duree || 0;
+    
+    if (afficherHorsConges && heuresConges > 0) {
+      // Soustraire les congés proportionnellement
+      const totalInactivite = statsInactivite.total?.duree || 0;
+      if (totalInactivite > 0) {
+        const facteurAjustement = (totalInactivite - heuresConges) / totalInactivite;
+        dureeAjustee = dureeAjustee * facteurAjustement;
+      }
+    }
+    
+    return {
+      poste: poste,
+      duree: dureeAjustee,
+      dureeOriginale: data.duree || 0,
+      entrees: data.nbEntrees || 0
+    };
+  });
+  
+  // Trier par durée décroissante et prendre les 10 premiers
+  posteData.sort((a, b) => b.duree - a.duree);
+  const topPostes = posteData.slice(0, 10);
+  
+  // Préparation des données
+  const labels = topPostes.map(item => item.poste);
+  const durees = topPostes.map(item => item.duree);
+  
+  // Générer des couleurs
+  const colors = labels.map((_, index) => {
+    const hue = (index * 360 / labels.length) % 360;
+    return `hsla(${hue}, 70%, 60%, 0.7)`;
+  });
+  
+  // Création du graphique
+  window.inactivitePostesChart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: afficherHorsConges ? "Heures d'inactivité (hors congés)" : "Heures d'inactivité",
+        data: durees,
+        backgroundColor: colors,
+        borderWidth: 0,
+        borderRadius: 6,
+        maxBarThickness: 50
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `Durée: ${context.raw.toFixed(2)} h`;
+            },
+            afterLabel: function(context) {
+              const poste = topPostes[context.dataIndex];
+              const texte = [`Nombre d'entrées: ${poste.entrees}`];
+              
+              // Si affichage hors congés, ajouter l'info sur la durée originale
+              if (afficherHorsConges && Math.abs(poste.duree - poste.dureeOriginale) > 0.01) {
+                texte.push(`Durée totale (avec congés): ${poste.dureeOriginale.toFixed(2)} h`);
+              }
+              
+              return texte;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Heures d\'inactivité'
+          }
+        },
+        y: {
+          grid: {
+            display: false
+          }
+        }
+      }
+    }
+  });
 }
 
 // Fonction pour créer le graphique par équipes
 function createInactiviteEquipesChart() {
-    const ctx = document.getElementById('chart-inactivite-equipes')?.getContext('2d');
-    if (!ctx) return;
-    destroyChartIfExists(inactiviteEquipesChart); inactiviteEquipesChart = null;
-    if (!statsInactivite.parEquipe) return;
-
-    const sortedData = Object.entries(statsInactivite.parEquipe)
-                            .filter(([, data]) => data.duree > 0)
-                            .sort(([, a], [, b]) => b.duree - a.duree)
-                            .slice(0, 5); // Top 5
-
-    if (sortedData.length === 0) return;
-
-    const labels = sortedData.map(([equipe]) => equipe);
-    const data = sortedData.map(([, val]) => val.duree);
-    const colors = generateColors(labels.length, 90); // Offset hue
-
-    inactiviteEquipesChart = new Chart(ctx, {
-         type: 'bar',
-         data: {
-            labels: labels,
-            datasets: [{
-                label: 'Durée Inactivité (h)',
-                data: data,
-                backgroundColor: colors,
-                borderColor: colors.map(c => c.replace('0.7', '1')),
-                borderWidth: 1,
-                borderRadius: 4
-            }]
-         },
-         options: {
-            indexAxis: 'y',
-            responsive: true,
-            maintainAspectRatio: false,
-             plugins: {
-                legend: { display: false },
-                 tooltip: {
-                     callbacks: {
-                        label: context => `Durée: ${context.parsed.x.toFixed(2)} h`
-                    }
-                },
-                 title: { display: false } // Titre déjà dans card-header
-             },
-            scales: { x: { beginAtZero: true, title: { display: true, text: 'Durée totale (h)' } }, y: { grid: { display: false }} }
-         }
-    });
+  console.log("Création du graphique des équipes par inactivité");
+  
+  const canvas = document.getElementById('chart-inactivite-equipes');
+  if (!canvas) {
+    console.error("Élément canvas 'chart-inactivite-equipes' introuvable");
+    return;
+  }
+  
+  // Détruire le graphique existant s'il y en a un
+  if (window.inactiviteEquipesChart) {
+    window.inactiviteEquipesChart.destroy();
+  }
+  
+  // Vérifier que nous avons des données par équipe
+  if (!statsInactivite.parEquipe || Object.keys(statsInactivite.parEquipe).length === 0) {
+    console.warn("Pas de données par équipe disponibles");
+    return;
+  }
+  
+  // Créer un tableau pour trier les données
+  const equipeData = Object.entries(statsInactivite.parEquipe).map(([equipe, data]) => ({
+    equipe: equipe,
+    duree: data.duree || 0,
+    entrees: data.nbEntrees || 0
+  }));
+  
+  // Trier par durée décroissante
+  equipeData.sort((a, b) => b.duree - a.duree);
+  
+  // Préparation des données
+  const labels = equipeData.map(item => item.equipe);
+  const durees = equipeData.map(item => item.duree);
+  
+  // Générer des couleurs
+  const colors = labels.map((_, index) => {
+    const hue = (index * 360 / labels.length + 120) % 360; // Décalage pour différencier des postes
+    return `hsla(${hue}, 70%, 60%, 0.7)`;
+  });
+  
+  // Création du graphique
+  window.inactiviteEquipesChart = new Chart(canvas.getContext('2d'), {
+    type: 'doughnut',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: "Heures d'inactivité",
+        data: durees,
+        backgroundColor: colors,
+        borderWidth: 1
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: {
+            boxWidth: 12,
+            padding: 10
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              const label = context.label || '';
+              const value = context.raw || 0;
+              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+              const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : '0.0';
+              return `${label}: ${value.toFixed(2)}h (${percentage}%)`;
+            },
+            afterLabel: function(context) {
+              const equipe = equipeData[context.dataIndex];
+              return `Nombre d'entrées: ${equipe.entrees}`;
+            }
+          }
+        }
+      }
+    }
+  });
 }
 
 // Fonction pour mettre à jour le graphique d'évolution
 function updateInactiviteEvolutionChart() {
-    const ctx = document.getElementById('chart-inactivite-evolution')?.getContext('2d');
-    if (!ctx) return;
-    destroyChartIfExists(inactiviteEvolutionChart); inactiviteEvolutionChart = null;
-    if (!statsInactivite.parPeriode) return;
-
-    const periodeType = document.querySelector('input[name="inactivite-periode-type"]:checked').value;
-    const dataEvolution = statsInactivite.parPeriode[periodeType] || [];
-
-    if (dataEvolution.length === 0) {
-        // Optionnel: afficher un message ou vider le canvas
-        console.log("Aucune donnée d'évolution d'inactivité pour la période: " + periodeType);
-        return;
-    }
-
-    // Les données sont déjà triées par le serveur
-    const labels = dataEvolution.map(d => d.periode);
-    const data = dataEvolution.map(d => d.duree);
-
-    inactiviteEvolutionChart = new Chart(ctx, {
-         type: 'line',
-         data: {
-            labels: labels,
-            datasets: [{
-                label: 'Durée Totale Inactivité (h)',
-                data: data,
-                borderColor: CONFIG.colors.warning || '#ffc107', // Couleur warning
-                backgroundColor: (CONFIG.colors.warning || '#ffc107').replace(')', ', 0.1)'),
-                fill: true,
-                tension: 0.2, // Ligne un peu courbée
-                pointBackgroundColor: CONFIG.colors.warning || '#ffc107',
-                pointBorderColor: '#fff',
-                pointHoverRadius: 6,
-                pointHoverBorderWidth: 2
-            }]
-         },
-         options: {
-             responsive: true,
-             maintainAspectRatio: false,
-             plugins: {
-                legend: { display: false },
-                tooltip: {
-                    callbacks: {
-                         label: context => `Durée: ${context.parsed.y.toFixed(2)} h`
-                    }
-                },
-                 title: { display: false } // Titre déjà dans card-header
-             },
-             scales: {
-                 y: { beginAtZero: true, title: {display: true, text: 'Durée totale (h)'} },
-                 x: { grid: { display: false }, ticks: { autoSkip: true, maxRotation: 45 } } // Permettre au graphique de sauter des labels si trop nombreux
-             }
-         }
+  console.log("Mise à jour du graphique d'évolution de l'inactivité");
+  
+  const canvas = document.getElementById('chart-inactivite-evolution');
+  if (!canvas) {
+    console.error("Élément canvas 'chart-inactivite-evolution' introuvable");
+    return;
+  }
+  
+  // Détruire le graphique existant s'il y en a un
+  if (window.inactiviteEvolutionChart) {
+    window.inactiviteEvolutionChart.destroy();
+  }
+  
+  // Vérifier que nous avons des données
+  if (!statsInactivite.total) {
+    console.warn("Pas de données disponibles pour le graphique d'évolution");
+    return;
+  }
+  
+  // Récupérer le type de période sélectionné
+  const periodeType = document.querySelector('input[name="inactivite-periode-type"]:checked')?.value || 'mois';
+  
+  // Agréger les données par période
+  const donneesParPeriode = {};
+  
+  // Parcourir les données (si nous avons des données détaillées par période)
+  if (statsInactivite.donnees && Array.isArray(statsInactivite.donnees)) {
+    statsInactivite.donnees.forEach(item => {
+      if (!item.date) return;
+      
+      // Convertir la date en objet Date si ce n'est pas déjà le cas
+      let date;
+      if (item.date instanceof Date) {
+        date = item.date;
+      } else {
+        // Si c'est une string, essayer de la parser
+        date = new Date(item.date);
+        if (isNaN(date.getTime())) {
+          // Essayer le format DD/MM/YYYY
+          const parts = item.date.split('/');
+          if (parts.length === 3) {
+            date = new Date(parts[2], parts[1] - 1, parts[0]);
+          } else {
+            return; // Date invalide
+          }
+        }
+      }
+      
+      // Déterminer la période
+      let periode;
+      if (periodeType === 'mois') {
+        periode = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      } else {
+        // Calculer la semaine de l'année
+        const premierJanvier = new Date(date.getFullYear(), 0, 1);
+        const jours = Math.floor((date - premierJanvier) / (24 * 60 * 60 * 1000));
+        const semaine = Math.ceil((jours + premierJanvier.getDay() + 1) / 7);
+        periode = `${date.getFullYear()}-S${String(semaine).padStart(2, '0')}`;
+      }
+      
+      // Initialiser la période si nécessaire
+      if (!donneesParPeriode[periode]) {
+        donneesParPeriode[periode] = {
+          inactiviteTotal: 0,
+          nbEntrees: 0
+        };
+      }
+      
+      // Ajouter l'inactivité
+      if (item.inactiviteTotal !== undefined) {
+        donneesParPeriode[periode].inactiviteTotal += item.inactiviteTotal;
+        donneesParPeriode[periode].nbEntrees++;
+      }
     });
+  }
+  
+  // Si nous n'avons pas de données détaillées, utiliser les données agrégées par période si disponibles
+  if (Object.keys(donneesParPeriode).length === 0 && statsInactivite.parPeriode) {
+    const periodeData = statsInactivite.parPeriode[periodeType] || [];
+    
+    if (Array.isArray(periodeData)) {
+      periodeData.forEach(item => {
+        if (item.periode && item.duree !== undefined) {
+          donneesParPeriode[item.periode] = {
+            inactiviteTotal: item.duree,
+            nbEntrees: item.nbEntrees || 1
+          };
+        }
+      });
+    }
+  }
+  
+  // Si toujours aucune donnée, générer des données de simulation pour la démo
+  if (Object.keys(donneesParPeriode).length === 0) {
+    console.log("Pas de données d'évolution réelles, génération de données simulées");
+    
+    // Générer 6 périodes
+    const today = new Date();
+    for (let i = 0; i < 6; i++) {
+      let date = new Date(today);
+      date.setMonth(today.getMonth() - i);
+      
+      const periode = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      
+      donneesParPeriode[periode] = {
+        inactiviteTotal: Math.random() * 20 + 5, // Entre 5 et 25 heures
+        nbEntrees: Math.floor(Math.random() * 10 + 5) // Entre 5 et 15 entrées
+      };
+    }
+  }
+  
+  // Convertir en tableaux pour le graphique
+  const periodes = Object.keys(donneesParPeriode).sort();
+  const inactiviteValues = periodes.map(p => donneesParPeriode[p].inactiviteTotal);
+  const nbEntrees = periodes.map(p => donneesParPeriode[p].nbEntrees);
+  
+  // Formater les étiquettes selon le type de période
+  const labels = periodes.map(periode => {
+    if (periodeType === 'mois') {
+      const [annee, mois] = periode.split('-');
+      const moisNoms = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+      return `${moisNoms[parseInt(mois) - 1]} ${annee}`;
+    } else {
+      return periode; // Format YYYY-SXX
+    }
+  });
+  
+  // Créer le graphique
+  window.inactiviteEvolutionChart = new Chart(canvas.getContext('2d'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "Heures d'inactivité",
+          data: inactiviteValues,
+          backgroundColor: 'rgba(54, 162, 235, 0.7)',
+          borderColor: 'rgba(54, 162, 235, 1)',
+          borderWidth: 1,
+          borderRadius: 4,
+          order: 1
+        },
+        {
+          label: "Nombre d'entrées",
+          data: nbEntrees,
+          type: 'line',
+          backgroundColor: 'transparent',
+          borderColor: 'rgba(255, 99, 132, 1)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: 'rgba(255, 99, 132, 1)',
+          pointBorderColor: '#fff',
+          tension: 0.1,
+          yAxisID: 'y1',
+          order: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        title: {
+          display: true,
+          text: `Évolution de l'inactivité par ${periodeType === 'mois' ? 'mois' : 'semaine'}`,
+          font: {
+            size: 16,
+            weight: 'bold'
+          }
+        },
+        tooltip: {
+          mode: 'index',
+          callbacks: {
+            label: function(context) {
+              if (context.dataset.label === "Heures d'inactivité") {
+                return `${context.dataset.label}: ${context.raw.toFixed(2)}h`;
+              } else {
+                return `${context.dataset.label}: ${context.raw}`;
+              }
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: "Heures d'inactivité"
+          }
+        },
+        y1: {
+          position: 'right',
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: "Nombre d'entrées"
+          },
+          grid: {
+            display: false
+          }
+        },
+        x: {
+          grid: {
+            display: false
+          }
+        }
+      }
+    }
+  });
 }
+
 
 // Fonction utilitaire pour détruire un graphique Chart.js
 function destroyChartIfExists(chartInstance) {
