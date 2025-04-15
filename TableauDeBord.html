@@ -994,19 +994,19 @@
       <div class="col-md-3 mb-4 mb-md-0">
         <div class="stat-card">
           <div class="icon">
-            <i class="fas fa-umbrella-beach"></i>
+            <i class="fas fa-user-clock"></i>
           </div>
-          <h2 class="value" id="inactivite-taux-conges">--</h2>
-          <p class="label">Taux de congés</p>
+          <h2 class="value" id="inactivite-moyenne-operateur">--</h2>
+          <p class="label">Moyenne par opérateur</p>
         </div>
       </div>
       <div class="col-md-3">
         <div class="stat-card">
           <div class="icon">
-            <i class="fas fa-business-time"></i>
+            <i class="fas fa-users"></i>
           </div>
-          <h2 class="value" id="inactivite-hors-conges">--</h2>
-          <p class="label">Inactivité hors congés</p>
+          <h2 class="value" id="inactivite-moyenne-equipe">--</h2>
+          <p class="label">Moyenne par équipe</p>
         </div>
       </div>
     </div>
@@ -2350,70 +2350,25 @@ function updateInactiviteUI() {
  * Mettre à jour les indicateurs d'inactivité
  */
 function updateInactiviteIndicators() {
-  console.log("Mise à jour des indicateurs d'inactivité");
-  
-  // Extraire les données
+  // Extraction des données
   const totalInactivite = statsInactivite.total?.duree || 0;
+  const nbEntreesTotal = statsInactivite.total?.nbEntrees || 0;
   const totalPresence = statsInactivite.total?.presenceTotal || 0;
-  const nbEntrees = statsInactivite.total?.nbEntrees || 0;
-  
-  // Mettre à jour l'indicateur du total d'inactivité
-  document.getElementById('inactivite-total').textContent = totalInactivite.toFixed(2);
-  
-  // Calculer et mettre à jour le pourcentage du temps total avec la nouvelle formule:
-  // inactivité / (présence + inactivité)
-  const tempsTotalReel = totalPresence + totalInactivite;
-  const pourcentageInactivite = tempsTotalReel > 0 ? (totalInactivite / tempsTotalReel) * 100 : 0;
-  document.getElementById('inactivite-pourcentage').textContent = pourcentageInactivite.toFixed(1) + '%';
-  
-  // Identifier les heures de congés en cherchant un type d'inactivité contenant "congé" 
-  // (ou d'autres noms possibles pour les congés)
-  let heuresConges = 0;
-  if (statsInactivite.parType) {
-    Object.entries(statsInactivite.parType).forEach(([type, data]) => {
-      // Rechercher de façon insensible à la casse les types qui contiennent des mots liés aux congés
-      const typeLower = type.toLowerCase();
-      if (typeLower.includes('congé') || typeLower.includes('conge') || 
-          typeLower.includes('vacance') || typeLower.includes('absence') || 
-          typeLower.includes('cp')) {
-        heuresConges += data.duree || 0;
-      }
-    });
-  }
-  
-  // Calculer le taux de congés: heures de congés / (présence + inactivité)
-  const tauxConges = tempsTotalReel > 0 ? (heuresConges / tempsTotalReel) * 100 : 0;
-  document.getElementById('inactivite-taux-conges').textContent = tauxConges.toFixed(1) + '%';
-  
-  // Calculer le total d'heures d'inactivité hors congés
-  const inactiviteHorsConges = totalInactivite - heuresConges;
-  document.getElementById('inactivite-hors-conges').textContent = inactiviteHorsConges.toFixed(2);
-  
-  console.log("Indicateurs mis à jour avec succès:", {
-    total: totalInactivite.toFixed(2),
-    pourcentage: pourcentageInactivite.toFixed(1) + '%',
-    tauxConges: tauxConges.toFixed(1) + '%',
-    inactiviteHorsConges: inactiviteHorsConges.toFixed(2)
-  });
-}
 
-function getHeuresConges() {
-  let heuresConges = 0;
+  // Utiliser les IDs corrects qui sont présents dans le HTML
+  document.getElementById('inactivite-total').textContent = totalInactivite.toFixed(2);
+
+  const pourcentagePresence = totalPresence > 0 ? (totalInactivite / totalPresence) * 100 : 0;
+  document.getElementById('inactivite-pourcentage').textContent = pourcentagePresence.toFixed(1) + '%';
+
+  // Moyenne par opérateur
+  const moyenneParOperateur = nbEntreesTotal > 0 ? (totalInactivite / nbEntreesTotal) : 0;
+  document.getElementById('inactivite-moyenne-operateur').textContent = moyenneParOperateur.toFixed(2);
   
-  if (!statsInactivite || !statsInactivite.parType) {
-    return heuresConges;
-  }
-  
-  Object.entries(statsInactivite.parType).forEach(([type, data]) => {
-    const typeLower = type.toLowerCase();
-    if (typeLower.includes('congé') || typeLower.includes('conge') || 
-        typeLower.includes('vacance') || typeLower.includes('absence') || 
-        typeLower.includes('cp')) {
-      heuresConges += data.duree || 0;
-    }
-  });
-  
-  return heuresConges;
+  // Moyenne par équipe
+  const nbEquipes = statsInactivite.parEquipe ? Object.keys(statsInactivite.parEquipe).length : 0;
+  const moyenneParEquipe = nbEquipes > 0 ? totalInactivite / nbEquipes : 0;
+  document.getElementById('inactivite-moyenne-equipe').textContent = moyenneParEquipe.toFixed(2);
 }
 
 /**
@@ -2440,28 +2395,12 @@ function createInactiviteTypeChart() {
   }
   
   // Préparation des données
-  const typesData = Object.entries(statsInactivite.parType).map(([type, data]) => ({
-    type: type,
-    duree: data.duree || 0,
-    estConges: type.toLowerCase().includes('congé') || type.toLowerCase().includes('conge') || 
-               type.toLowerCase().includes('vacance') || type.toLowerCase().includes('absence') || 
-               type.toLowerCase().includes('cp')
-  }));
-  
-  // Trier par durée décroissante
-  typesData.sort((a, b) => b.duree - a.duree);
-  
-  const types = typesData.map(item => item.type);
-  const values = typesData.map(item => item.duree);
+  const types = Object.keys(statsInactivite.parType);
+  const values = types.map(type => statsInactivite.parType[type].duree || 0);
   
   // Générer des couleurs
-  const colors = typesData.map((item, index) => {
-    // Utiliser une couleur spéciale pour les congés (bleu clair)
-    if (item.estConges) {
-      return 'rgba(89, 205, 240, 0.7)';
-    }
-    // Couleurs normales pour les autres types
-    const hue = (index * 360 / typesData.length) % 360;
+  const colors = types.map((_, index) => {
+    const hue = (index * 360 / types.length) % 360;
     return `hsla(${hue}, 70%, 60%, 0.7)`;
   });
   
@@ -3792,10 +3731,7 @@ function updateInactiviteTypesTable() {
     duree: data.duree || 0,
     occurrences: data.nbOccurrences || 0,
     pourcentage: totalDuree > 0 ? ((data.duree || 0) / totalDuree) * 100 : 0,
-    moyenne: data.nbOccurrences > 0 ? (data.duree || 0) / data.nbOccurrences : 0,
-    estConges: type.toLowerCase().includes('congé') || type.toLowerCase().includes('conge') || 
-               type.toLowerCase().includes('vacance') || type.toLowerCase().includes('absence') || 
-               type.toLowerCase().includes('cp')
+    moyenne: data.nbOccurrences > 0 ? (data.duree || 0) / data.nbOccurrences : 0
   }));
   
   // Trier par durée décroissante
@@ -3803,15 +3739,9 @@ function updateInactiviteTypesTable() {
   
   // Ajouter chaque type au tableau
   typeData.forEach(data => {
-    // Déterminer la classe de la ligne
+    // Déterminer la classe de la ligne en fonction du pourcentage
     let rowClass = '';
-    
-    // Mettre en évidence les congés avec une couleur bleu clair
-    if (data.estConges) {
-      rowClass = 'table-info';
-    }
-    // Sinon utiliser le code de couleur basé sur le pourcentage
-    else if (data.pourcentage > 30) {
+    if (data.pourcentage > 30) {
       rowClass = 'table-danger';
     } else if (data.pourcentage > 15) {
       rowClass = 'table-warning';
@@ -3832,23 +3762,6 @@ function updateInactiviteTypesTable() {
     
     tbody.appendChild(tr);
   });
-  
-  // Ajouter une ligne de total
-  const trTotal = document.createElement('tr');
-  trTotal.className = 'table-dark';
-  
-  const totalOccurrences = typeData.reduce((sum, data) => sum + data.occurrences, 0);
-  const moyenneGlobale = totalOccurrences > 0 ? totalDuree / totalOccurrences : 0;
-  
-  trTotal.innerHTML = `
-    <td><strong>TOTAL</strong></td>
-    <td><strong>${totalDuree.toFixed(2)}</strong></td>
-    <td><strong>100.0%</strong></td>
-    <td><strong>${totalOccurrences}</strong></td>
-    <td><strong>${moyenneGlobale.toFixed(2)}</strong></td>
-  `;
-  
-  tbody.appendChild(trTotal);
 }
 
 // Fonction pour créer le graphique Pareto
@@ -3972,33 +3885,12 @@ function createInactivitePostesChart() {
     return;
   }
   
-  // Calculer le total des heures de congés
-  const heuresConges = getHeuresConges();
-  
-  // Option pour afficher les données hors congés
-  const afficherHorsConges = true; // On pourrait ajouter un toggle dans l'interface
-  
   // Créer un tableau pour trier les données
-  const posteData = Object.entries(statsInactivite.parPoste).map(([poste, data]) => {
-    // Si l'option est activée, soustraire proportionnellement les heures de congés
-    let dureeAjustee = data.duree || 0;
-    
-    if (afficherHorsConges && heuresConges > 0) {
-      // Soustraire les congés proportionnellement
-      const totalInactivite = statsInactivite.total?.duree || 0;
-      if (totalInactivite > 0) {
-        const facteurAjustement = (totalInactivite - heuresConges) / totalInactivite;
-        dureeAjustee = dureeAjustee * facteurAjustement;
-      }
-    }
-    
-    return {
-      poste: poste,
-      duree: dureeAjustee,
-      dureeOriginale: data.duree || 0,
-      entrees: data.nbEntrees || 0
-    };
-  });
+  const posteData = Object.entries(statsInactivite.parPoste).map(([poste, data]) => ({
+    poste: poste,
+    duree: data.duree || 0,
+    entrees: data.nbEntrees || 0
+  }));
   
   // Trier par durée décroissante et prendre les 10 premiers
   posteData.sort((a, b) => b.duree - a.duree);
@@ -4020,7 +3912,7 @@ function createInactivitePostesChart() {
     data: {
       labels: labels,
       datasets: [{
-        label: afficherHorsConges ? "Heures d'inactivité (hors congés)" : "Heures d'inactivité",
+        label: "Heures d'inactivité",
         data: durees,
         backgroundColor: colors,
         borderWidth: 0,
@@ -4043,14 +3935,7 @@ function createInactivitePostesChart() {
             },
             afterLabel: function(context) {
               const poste = topPostes[context.dataIndex];
-              const texte = [`Nombre d'entrées: ${poste.entrees}`];
-              
-              // Si affichage hors congés, ajouter l'info sur la durée originale
-              if (afficherHorsConges && Math.abs(poste.duree - poste.dureeOriginale) > 0.01) {
-                texte.push(`Durée totale (avec congés): ${poste.dureeOriginale.toFixed(2)} h`);
-              }
-              
-              return texte;
+              return `Nombre d'entrées: ${poste.entrees}`;
             }
           }
         }
