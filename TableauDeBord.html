@@ -6181,6 +6181,9 @@ function updateAleasIndicators() {
 /**
  * Créer le graphique Pareto des types d'aléas
  */
+/**
+ * Créer le graphique Pareto des types d'aléas
+ */
 function createAleasTypeChart() {
     // Regrouper par type d'aléa
     const typeCount = {};
@@ -6207,19 +6210,19 @@ function createAleasTypeChart() {
     const counts = types.map(type => typeCount[type]);
     const durees = types.map(type => typeDuree[type]);
 
-    // Trier par nombre d'occurrences décroissant
-    const sortedIndices = counts.map((count, index) => index)
-        .sort((a, b) => counts[b] - counts[a]);
+    // Trier par heures d'aléas décroissant (au lieu du nombre d'occurrences)
+    const sortedIndices = durees.map((duree, index) => index)
+        .sort((a, b) => durees[b] - durees[a]);
 
     const sortedTypes = sortedIndices.map(index => types[index]);
     const sortedCounts = sortedIndices.map(index => counts[index]);
     const sortedDurees = sortedIndices.map(index => durees[index]);
 
-    // Calculer le pourcentage cumulé pour la courbe de Pareto
-    const totalCount = sortedCounts.reduce((a, b) => a + b, 0);
+    // Calculer le pourcentage cumulé pour la courbe de Pareto (basé sur les heures)
+    const totalDuree = sortedDurees.reduce((a, b) => a + b, 0);
     let cumulativePercent = 0;
-    const cumulativeData = sortedCounts.map(count => {
-        cumulativePercent += (count / totalCount) * 100;
+    const cumulativeData = sortedDurees.map(duree => {
+        cumulativePercent += (duree / totalDuree) * 100;
         return cumulativePercent;
     });
 
@@ -6250,16 +6253,16 @@ function createAleasTypeChart() {
             labels: sortedTypes,
             datasets: [
                 {
-                    label: 'Nombre d\'aléas',
-                    data: sortedCounts,
+                    label: 'Heures d\'aléas',
+                    data: sortedDurees,
                     backgroundColor: backgroundColor,
                     borderWidth: 1,
                     borderRadius: 5,
                     order: 2
                 },
                 {
-                    label: 'Heures cumulées',
-                    data: sortedDurees,
+                    label: 'Nombre d\'occurrences',
+                    data: sortedCounts,
                     backgroundColor: 'rgba(255, 99, 132, 0.7)',
                     borderWidth: 1,
                     borderRadius: 5,
@@ -6290,8 +6293,10 @@ function createAleasTypeChart() {
                         label: function (context) {
                             if (context.dataset.label === 'Pourcentage cumulé') {
                                 return `${context.dataset.label}: ${context.raw.toFixed(1)}%`;
-                            } else if (context.dataset.label === 'Heures cumulées') {
+                            } else if (context.dataset.label === 'Heures d\'aléas') {
                                 return `${context.dataset.label}: ${context.raw.toFixed(2)} h`;
+                            } else if (context.dataset.label === 'Nombre d\'occurrences') {
+                                return `${context.dataset.label}: ${context.raw}`;
                             }
                             return `${context.dataset.label}: ${context.raw}`;
                         }
@@ -6311,7 +6316,7 @@ function createAleasTypeChart() {
                     beginAtZero: true,
                     title: {
                         display: true,
-                        text: 'Nombre d\'aléas'
+                        text: 'Heures d\'aléas'
                     }
                 },
                 percentage: {
