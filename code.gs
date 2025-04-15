@@ -1749,9 +1749,8 @@ function obtenirDonnees() {
 }
 
 /**
- * Fonction pour obtenir les statistiques d'inactivité
- * @param {Object} filtres - Filtres à appliquer
- * @return {Object} - Objet contenant les statistiques agrégées
+ * Fonction pour obtenir les statistiques d'inactivité avec gestion des congés
+ * Cette fonction doit être ajoutée dans le fichier Code.gs côté serveur
  */
 function obtenirStatistiquesInactivite(filtres) {
   try {
@@ -1784,8 +1783,22 @@ function obtenirStatistiquesInactivite(filtres) {
     }
     
     if (inactiviteColumns.length === 0) {
-      Logger.log("Aucune colonne d'inactivité trouvée");
-      return { success: false, message: "Aucune colonne d'inactivité trouvée" };
+      Logger.log("Aucune colonne d'inactivité trouvée dans la plage AD-AK");
+      
+      // Essayer de rechercher les colonnes avec un autre critère (par exemple, contenant "INAC_" ou similaire)
+      for (var i = 0; i < headers.length; i++) {
+        var header = String(headers[i] || "").toUpperCase();
+        if (header.includes("INAC") || header.includes("CONGE") || header.includes("PAUSE") || 
+            header.includes("ATTENTE") || header.includes("FORMATION")) {
+          inactiviteColumns.push(i);
+          inactiviteTypes.push(String(headers[i]));
+          Logger.log("Colonne d'inactivité alternative trouvée: " + headers[i] + " à l'index " + i);
+        }
+      }
+      
+      if (inactiviteColumns.length === 0) {
+        return { success: false, message: "Aucune colonne d'inactivité trouvée" };
+      }
     }
     
     // 3. Identifier d'autres colonnes importantes
@@ -1813,12 +1826,30 @@ function obtenirStatistiquesInactivite(filtres) {
       total: { duree: 0, nbEntrees: 0, presenceTotal: 0 },
       parType: {},
       parPoste: {},
-      parEquipe: {}
+      parEquipe: {},
+      parOperateur: {},
+      donnees: [] // Pour stocker les données détaillées pour les graphiques temporels
     };
+    
+    // Identifier quels types d'inactivité sont liés aux congés
+    var typesConges = [];
+    inactiviteTypes.forEach(function(type) {
+      var typeLower = type.toLowerCase();
+      if (typeLower.includes('congé') || typeLower.includes('conge') || 
+          typeLower.includes('vacance') || typeLower.includes('absence') || 
+          typeLower.includes('cp')) {
+        typesConges.push(type);
+        Logger.log("Type d'inactivité identifié comme congé: " + type);
+      }
+    });
     
     // Initialiser les compteurs pour les types d'inactivité
     inactiviteTypes.forEach(function(type) {
-      stats.parType[type] = { duree: 0, nbOccurrences: 0 };
+      stats.parType[type] = { 
+        duree: 0, 
+        nbOccurrences: 0,
+        estConges: typesConges.includes(type)
+      };
     });
     
     // 5. Agréger les données d'inactivité à partir des 3ème ligne (index 2)
@@ -1869,9 +1900,8 @@ function obtenirStatistiquesInactivite(filtres) {
       
       // Calculer l'inactivité totale pour cette ligne
       var rowInactiviteTotal = 0;
-      
-      // Debug: afficher les valeurs des colonnes d'inactivité
-      var debugValues = "[";
+      var rowInactiviteConges = 0;
+      var rowInactiviteParType = {};
       
       // Parcourir chaque colonne d'inactivité
       for (var i = 0; i < inactiviteColumns.length; i++) {
@@ -1890,69 +1920,132 @@ function obtenirStatistiquesInactivite(filtres) {
           numValue = parseFloat(cellValue) || 0;
         }
         
-        // Debug
-        debugValues += cellValue + " (" + typeof cellValue + " -> " + numValue + "), ";
-        
         // Seulement compter si > 0
         if (numValue > 0) {
           stats.parType[type].duree += numValue;
           stats.parType[type].nbOccurrences++;
           rowInactiviteTotal += numValue;
+          rowInactiviteParType[type] = numValue;
+          
+          // Vérifier si c'est un type de congé
+          if (stats.parType[type].estConges) {
+            rowInactiviteConges += numValue;
+          }
         }
       }
       
-      debugValues += "]";
-      
-      // Si cette ligne a de l'inactivité, logger pour debug
+      // Si cette ligne a de l'inactivité, ajouter aux statistiques
       if (rowInactiviteTotal > 0) {
-        Logger.log("Ligne " + (rowIndex + 1) + " pour " + row[operateurIndex] + 
-                  ": inactivité = " + rowInactiviteTotal + ", valeurs = " + debugValues);
-      } else if (rowIndex < 10) { // Logger quelques lignes au début pour debug
-        Logger.log("Ligne " + (rowIndex + 1) + " sans inactivité, valeurs = " + debugValues);
-      }
-      
-      // Ajouter au total général
-      stats.total.duree += rowInactiviteTotal;
-      
-      // Ajouter aux statistiques par poste
-      if (posteIndex >= 0 && row[posteIndex]) {
-        var poste = String(row[posteIndex]);
+        // Ajouter au total général
+        stats.total.duree += rowInactiviteTotal;
         
-        if (!stats.parPoste[poste]) {
-          stats.parPoste[poste] = { duree: 0, nbEntrees: 0 };
+        // Ajouter aux statistiques par opérateur
+        var operateur = String(row[operateurIndex]);
+        if (!stats.parOperateur[operateur]) {
+          stats.parOperateur[operateur] = { 
+            duree: 0, 
+            dureeConges: 0,
+            nbEntrees: 0, 
+            parType: {} 
+          };
+          inactiviteTypes.forEach(function(type) {
+            stats.parOperateur[operateur].parType[type] = 0;
+          });
         }
         
-        stats.parPoste[poste].duree += rowInactiviteTotal;
-        stats.parPoste[poste].nbEntrees++;
-      }
-      
-      // Ajouter aux statistiques par équipe
-      if (equipeIndex >= 0 && row[equipeIndex]) {
-        var equipe = String(row[equipeIndex]);
+        stats.parOperateur[operateur].duree += rowInactiviteTotal;
+        stats.parOperateur[operateur].dureeConges += rowInactiviteConges;
+        stats.parOperateur[operateur].nbEntrees++;
         
-        if (!stats.parEquipe[equipe]) {
-          stats.parEquipe[equipe] = { duree: 0, nbEntrees: 0 };
+        // Ajouter les détails par type
+        Object.keys(rowInactiviteParType).forEach(function(type) {
+          stats.parOperateur[operateur].parType[type] += rowInactiviteParType[type];
+        });
+        
+        // Ajouter aux statistiques par poste
+        if (posteIndex >= 0 && row[posteIndex]) {
+          var poste = String(row[posteIndex]);
+          
+          if (!stats.parPoste[poste]) {
+            stats.parPoste[poste] = { 
+              duree: 0,
+              dureeConges: 0,
+              nbEntrees: 0 
+            };
+          }
+          
+          stats.parPoste[poste].duree += rowInactiviteTotal;
+          stats.parPoste[poste].dureeConges += rowInactiviteConges;
+          stats.parPoste[poste].nbEntrees++;
         }
         
-        stats.parEquipe[equipe].duree += rowInactiviteTotal;
-        stats.parEquipe[equipe].nbEntrees++;
+        // Ajouter aux statistiques par équipe
+        if (equipeIndex >= 0 && row[equipeIndex]) {
+          var equipe = String(row[equipeIndex]);
+          
+          if (!stats.parEquipe[equipe]) {
+            stats.parEquipe[equipe] = { 
+              duree: 0, 
+              dureeConges: 0,
+              nbEntrees: 0, 
+              nbOperateurs: 0, 
+              operateurs: new Set() 
+            };
+          }
+          
+          stats.parEquipe[equipe].duree += rowInactiviteTotal;
+          stats.parEquipe[equipe].dureeConges += rowInactiviteConges;
+          stats.parEquipe[equipe].nbEntrees++;
+          stats.parEquipe[equipe].operateurs.add(operateur);
+        }
+        
+        // Ajouter aux données détaillées pour les graphiques temporels
+        if (dateIndex >= 0 && row[dateIndex] instanceof Date) {
+          var date = row[dateIndex];
+          var dateStr = Utilities.formatDate(date, Session.getScriptTimeZone(), "dd/MM/yyyy");
+          
+          stats.donnees.push({
+            date: dateStr,
+            operateur: operateur,
+            poste: posteIndex >= 0 ? row[posteIndex] : "",
+            equipe: equipeIndex >= 0 ? row[equipeIndex] : "",
+            inactiviteTotal: rowInactiviteTotal,
+            inactiviteConges: rowInactiviteConges,
+            inactiviteHorsConges: rowInactiviteTotal - rowInactiviteConges,
+            inactiviteParType: rowInactiviteParType
+          });
+        }
       }
     }
     
-    // Vérification détaillée des résultats
-    Logger.log("Statistiques d'inactivité calculées. Total: " + stats.total.duree + "h, Entrées: " + stats.total.nbEntrees);
+    // Ajouter le total des heures de congés au niveau général
+    stats.total.dureeConges = 0;
+    typesConges.forEach(function(type) {
+      if (stats.parType[type]) {
+        stats.total.dureeConges += stats.parType[type].duree;
+      }
+    });
     
-    // Vérifier chaque type
-    for (var type in stats.parType) {
-      Logger.log("Type " + type + ": " + stats.parType[type].duree + "h, Occurrences: " + stats.parType[type].nbOccurrences);
-    }
+    // Calculer le total hors congés
+    stats.total.dureeHorsConges = stats.total.duree - stats.total.dureeConges;
+    
+    // Convertir les ensembles en nombres pour la sérialisation JSON
+    Object.keys(stats.parEquipe).forEach(function(equipe) {
+      stats.parEquipe[equipe].nbOperateurs = stats.parEquipe[equipe].operateurs.size;
+      delete stats.parEquipe[equipe].operateurs;
+    });
+    
+    // Vérification des résultats
+    Logger.log("Statistiques d'inactivité calculées. Total: " + stats.total.duree + "h, dont congés: " + 
+              stats.total.dureeConges + "h, Entrées: " + stats.total.nbEntrees);
     
     return { 
       success: true, 
       stats: stats,
       debug: {
         inactiviteColumns: inactiviteColumns,
-        inactiviteTypes: inactiviteTypes
+        inactiviteTypes: inactiviteTypes,
+        typesConges: typesConges
       }
     };
 
