@@ -2346,29 +2346,40 @@ function updateInactiviteUI() {
   }
 }
 
-/**
- * Mettre à jour les indicateurs d'inactivité
- */
+// Cette fonction met à jour les indicateurs d'inactivité
 function updateInactiviteIndicators() {
   // Extraction des données
   const totalInactivite = statsInactivite.total?.duree || 0;
   const nbEntreesTotal = statsInactivite.total?.nbEntrees || 0;
   const totalPresence = statsInactivite.total?.presenceTotal || 0;
-
-  // Utiliser les IDs corrects qui sont présents dans le HTML
+  
+  // 1. Modification du "Total heures d'inactivité" - reste inchangé
   document.getElementById('inactivite-total').textContent = totalInactivite.toFixed(2);
 
-  const pourcentagePresence = totalPresence > 0 ? (totalInactivite / totalPresence) * 100 : 0;
-  document.getElementById('inactivite-pourcentage').textContent = pourcentagePresence.toFixed(1) + '%';
-
-  // Moyenne par opérateur
-  const moyenneParOperateur = nbEntreesTotal > 0 ? (totalInactivite / nbEntreesTotal) : 0;
-  document.getElementById('inactivite-moyenne-operateur').textContent = moyenneParOperateur.toFixed(2);
+  // 2. Modification du "% du temps total" avec la nouvelle formule
+  const pourcentageInactivite = (totalPresence + totalInactivite) > 0 ? 
+      (totalInactivite / (totalPresence + totalInactivite)) * 100 : 0;
+  document.getElementById('inactivite-pourcentage').textContent = pourcentageInactivite.toFixed(1) + '%';
   
-  // Moyenne par équipe
-  const nbEquipes = statsInactivite.parEquipe ? Object.keys(statsInactivite.parEquipe).length : 0;
-  const moyenneParEquipe = nbEquipes > 0 ? totalInactivite / nbEquipes : 0;
-  document.getElementById('inactivite-moyenne-equipe').textContent = moyenneParEquipe.toFixed(2);
+  // 3. Modification de "Moyenne par opérateur" en "Taux de congés"
+  // Chercher les heures de congés dans les types d'inactivité
+  let totalConges = 0;
+  if (statsInactivite.parType && statsInactivite.parType['CONGES']) {
+    totalConges = statsInactivite.parType['CONGES'].duree || 0;
+  }
+  
+  // Calculer le taux de congés
+  const tauxConges = (totalPresence + totalInactivite) > 0 ? 
+      (totalConges / (totalPresence + totalInactivite)) * 100 : 0;
+  
+  // Mettre à jour le texte affiché
+  document.getElementById('inactivite-moyenne-operateur').textContent = tauxConges.toFixed(2) + '%';
+  document.querySelector('#inactivite-moyenne-operateur').nextElementSibling.textContent = "Taux de congés";
+  
+  // 4. Modification de "Moyenne par équipe" en "Total hors congés"
+  const totalHorsConges = totalInactivite - totalConges;
+  document.getElementById('inactivite-moyenne-equipe').textContent = totalHorsConges.toFixed(2);
+  document.querySelector('#inactivite-moyenne-equipe').nextElementSibling.textContent = "Inactivité hors congés (h)";
 }
 
 /**
@@ -3665,39 +3676,7 @@ function initInactiviteTabListeners() {
   window.inactiviteListenersInitialized = true;
 }
 
-// Mettre à jour les KPIs
-function updateInactiviteIndicators() {
-  console.log("Mise à jour des indicateurs d'inactivité");
-  
-  // Extraire les données
-  const totalInactivite = statsInactivite.total?.duree || 0;
-  const totalPresence = statsInactivite.total?.presenceTotal || 0;
-  const nbEntrees = statsInactivite.total?.nbEntrees || 0;
-  
-  // Mettre à jour les indicateurs de base
-  document.getElementById('inactivite-total').textContent = totalInactivite.toFixed(2);
-  
-  // Calculer et afficher le pourcentage du temps total
-  const pourcentage = totalPresence > 0 ? (totalInactivite / totalPresence) * 100 : 0;
-  document.getElementById('inactivite-pourcentage').textContent = pourcentage.toFixed(1) + '%';
-  
-  // Calculer et afficher la moyenne par opérateur
-  const nbOperateurs = statsInactivite.parOperateur ? Object.keys(statsInactivite.parOperateur).length : 0;
-  const moyenneOperateur = nbOperateurs > 0 ? totalInactivite / nbOperateurs : 0;
-  document.getElementById('inactivite-moyenne-operateur').textContent = moyenneOperateur.toFixed(2);
-  
-  // Calculer et afficher la moyenne par équipe
-  const nbEquipes = statsInactivite.parEquipe ? Object.keys(statsInactivite.parEquipe).length : 0;
-  const moyenneEquipe = nbEquipes > 0 ? totalInactivite / nbEquipes : 0;
-  document.getElementById('inactivite-moyenne-equipe').textContent = moyenneEquipe.toFixed(2);
-  
-  console.log("Indicateurs mis à jour avec succès:", {
-    total: totalInactivite.toFixed(2),
-    pourcentage: pourcentage.toFixed(1) + '%',
-    moyenneOperateur: moyenneOperateur.toFixed(2),
-    moyenneEquipe: moyenneEquipe.toFixed(2)
-  });
-}
+
 
 // Mettre à jour le tableau détaillé par type
 function updateInactiviteTypesTable() {
