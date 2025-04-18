@@ -520,7 +520,52 @@
         </div>
       </div>
     </div>
+    <!-- Ajouter une nouvelle rangée avec les cartes d'aléas et d'inactivité -->
+    <div class="row mb-4">
+    <div class="col-md-6 mb-4 mb-md-0">
+    <div class="stat-card">
+      <div class="icon">
+        <i class="fas fa-exclamation-triangle"></i>
+      </div>
+      <h2 class="value" id="aleas-total-heures">--</h2>
+      <p class="label">Total heures d'aléas</p>
+    </div>
+    </div>
+  <div class="col-md-6">
+    <div class="stat-card">
+      <div class="icon">
+        <i class="fas fa-coffee"></i>
+      </div>
+      <h2 class="value" id="inactivite-total-heures">--</h2>
+      <p class="label">Total heures d'inactivité (hors congés)</p>
+    </div>
+  </div>
+</div>
+
+<!-- Graphique de comparaison TAI/Aléas/Inactivité avec objectif interactif -->
+<div class="card mb-4">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <div>
+      <i class="fas fa-chart-bar me-2"></i>
+      Comparaison TAI / Aléas / Inactivité (hors congés)
+    </div>
     
+    <div class="d-flex align-items-center">
+      <label for="objectif-valeur" class="me-2 mb-0">Objectif:</label>
+      <input type="number" class="form-control form-control-sm" id="objectif-valeur" 
+        min="0" step="10" style="width: 100px;" value="100">
+      <button class="btn btn-sm btn-primary ms-2" id="btn-apply-objectif">
+        <i class="fas fa-check"></i> Appliquer
+      </button>
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="chart-container">
+      <canvas id="chart-comparaison-tai-aleas-inactivite"></canvas>
+    </div>
+  </div>
+</div>
+
     <!-- Aperçu des performances par poste -->
     <div class="card mb-4">
       <div class="card-header">
@@ -1635,6 +1680,21 @@ function initEventListeners() {
             document.getElementById('operateur-selector').style.display = 'none';
         });
     });
+
+    // Ajouter l'écouteur d'événement pour le bouton d'application de l'objectif
+    document.getElementById('btn-apply-objectif').addEventListener('click', function() {
+        // Mettre à jour uniquement le graphique de comparaison sans recharger toutes les données
+        updateComparisonChart();
+    });
+    
+    // Permettre également l'application de l'objectif en appuyant sur Entrée dans le champ
+    document.getElementById('objectif-valeur').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            updateComparisonChart();
+        }
+    });
+
 
     initInactiviteTab();
 
@@ -4266,6 +4326,8 @@ function setTextContent(elementId, text) {
 }
 
 function updateOverviewSection() {
+    // Code existant inchangé
+    
     // Calculer les totaux globaux
     let totalTAI = 0, totalPresence = 0, count = 0;
 
@@ -4293,11 +4355,290 @@ function updateOverviewSection() {
     // Mettre à jour les labels pour indiquer qu'il s'agit maintenant de totaux
     document.querySelector('#tai-global').nextElementSibling.textContent = "TAI total";
     document.querySelector('#presence-globale').nextElementSibling.textContent = "Présence totale (h)";
+    
+    // Calculer et afficher le total des heures d'aléas
+    let totalHeuresAleas = 0;
+    
+    // Vérifier si nous avons des données d'aléas disponibles
+    if (aleasAnalysisData && aleasAnalysisData.length > 0) {
+        // Sommer toutes les durées d'aléas
+        aleasAnalysisData.forEach(alea => {
+            if (alea.duree && !isNaN(parseFloat(alea.duree))) {
+                totalHeuresAleas += parseFloat(alea.duree);
+            }
+        });
+    } else if (dureesAleasOperateurs) {
+        // Alternative: utiliser les données agrégées par opérateur
+        Object.values(dureesAleasOperateurs).forEach(duree => {
+            if (!isNaN(parseFloat(duree))) {
+                totalHeuresAleas += parseFloat(duree);
+            }
+        });
+    }
+    
+    // Afficher le total des heures d'aléas
+    document.getElementById('aleas-total-heures').textContent = totalHeuresAleas.toFixed(2);
+    
+    // Calculer et afficher le total des heures d'inactivité (hors congés)
+    let totalInactiviteHorsConges = 0;
+    
+    // Vérifier si nous avons des données d'inactivité disponibles
+    if (statsInactivite && statsInactivite.total) {
+        // Total d'inactivité
+        const totalInactivite = statsInactivite.total.duree || 0;
+        
+        // Total des congés (si disponible dans les types d'inactivité)
+        let totalConges = 0;
+        if (statsInactivite.parType && statsInactivite.parType['CONGES']) {
+            totalConges = statsInactivite.parType['CONGES'].duree || 0;
+        }
+        
+        // Calculer le total hors congés
+        totalInactiviteHorsConges = totalInactivite - totalConges;
+    }
+    
+    // Afficher le total des heures d'inactivité hors congés
+    document.getElementById('inactivite-total-heures').textContent = totalInactiviteHorsConges.toFixed(2);
 
     // Créer les graphiques
     createTopPostesChart();
     createEquipesOverviewChart();
+    
+    // Mettre à jour le graphique de comparaison
+    updateComparisonChart();
 }
+
+// Variable globale pour stocker l'instance du graphique
+let comparisonChart = null;
+
+// Fonction pour créer ou mettre à jour le graphique de comparaison
+function updateComparisonChart() {
+  const ctx = document.getElementById('chart-comparaison-tai-aleas-inactivite').getContext('2d');
+  
+  // Récupérer les valeurs calculées
+  let totalTAI = parseFloat(document.getElementById('tai-global').textContent) || 0;
+  let totalHeuresAleas = parseFloat(document.getElementById('aleas-total-heures').textContent) || 0;
+  let totalInactiviteHorsConges = parseFloat(document.getElementById('inactivite-total-heures').textContent) || 0;
+  
+  // Récupérer l'objectif défini par l'utilisateur
+  let objectif = parseFloat(document.getElementById('objectif-valeur').value) || 100;
+  
+  // Calculer le total des trois valeurs (pour information seulement)
+  const totalHeures = totalTAI + totalHeuresAleas + totalInactiviteHorsConges;
+  
+  // Calculer l'écart avec l'objectif (positif si en dessous de l'objectif, négatif si au-dessus)
+  // Uniquement par rapport au TAI, pas le total empilé
+  const ecartAvecObjectif = objectif - totalTAI;
+  
+  // Préparer les données
+  const data = {
+    labels: ['Production'],
+    datasets: [
+      {
+        // TAI en bas (premier dans l'empilement)
+        label: 'TAI Total',
+        data: [totalTAI],
+        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+        borderColor: 'rgba(54, 162, 235, 1)',
+        borderWidth: 1,
+        stack: 'Stack 0',
+      },
+      {
+        // Aléas au milieu
+        label: 'Heures aléas',
+        data: [totalHeuresAleas],
+        backgroundColor: 'rgba(255, 99, 132, 0.7)',
+        borderColor: 'rgba(255, 99, 132, 1)',
+        borderWidth: 1,
+        stack: 'Stack 0',
+      },
+      {
+        // Inactivité au-dessus
+        label: 'Heures inactivité (hors congés)',
+        data: [totalInactiviteHorsConges],
+        backgroundColor: 'rgba(255, 206, 86, 0.7)',
+        borderColor: 'rgba(255, 206, 86, 1)',
+        borderWidth: 1,
+        stack: 'Stack 0',
+      }
+      // L'objectif sera affiché uniquement comme une ligne, pas une barre
+    ]
+  };
+  
+  // Configuration du graphique
+  const config = {
+    type: 'bar',
+    data: data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          grid: {
+            display: false
+          }
+        },
+        y: {
+          stacked: true, // Pour que les barres soient empilées
+          beginAtZero: true,
+          title: {
+            display: true,
+            text: 'Heures'
+          },
+          grid: {
+            color: function(context) {
+              if (context.tick.value === objectif) {
+                return 'rgba(75, 192, 192, 0.8)'; // Ligne de référence de l'objectif en couleur
+              }
+              return 'rgba(0, 0, 0, 0.1)'; // Grille normale en gris clair
+            },
+            lineWidth: function(context) {
+              if (context.tick.value === objectif) {
+                return 2; // Ligne plus épaisse pour l'objectif
+              }
+              return 1; // Épaisseur normale pour la grille
+            },
+            z: 1 // Placer la grille au-dessus des barres
+          }
+        }
+      },
+      plugins: {
+        // Configuration du tooltip
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              let label = context.dataset.label || '';
+              
+              if (label) {
+                label += ': ' + (context.formattedValue || '0') + 'h';
+                
+                // Ajouter le pourcentage par rapport au total des trois valeurs
+                const percentage = (context.raw / totalHeures * 100).toFixed(1);
+                label += ` (${percentage}% du total)`;
+                
+                // Pour le TAI, ajouter des informations sur l'écart avec l'objectif
+                if (label.includes('TAI Total')) {
+                  const taiFraction = (totalTAI / objectif * 100).toFixed(1);
+                  if (ecartAvecObjectif >= 0) {
+                    label += ` | Reste ${ecartAvecObjectif.toFixed(2)}h pour atteindre l'objectif (${taiFraction}% atteint)`;
+                  } else {
+                    label += ` | Objectif dépassé de ${Math.abs(ecartAvecObjectif).toFixed(2)}h (${taiFraction}% atteint)`;
+                  }
+                }
+              }
+              
+              return label;
+            },
+            // Ajouter un titre dans le tooltip avec le total
+            afterTitle: function() {
+              return `Total empilé: ${totalHeures.toFixed(2)}h`;
+            }
+          }
+        },
+        legend: {
+          position: 'top'
+        },
+        title: {
+          display: true,
+          text: 'TAI / Aléas / Inactivité avec objectif TAI',
+          font: {
+            size: 16
+          }
+        }
+      }
+    }
+  };
+  
+  // Détruire le graphique existant s'il y en a un
+  if (comparisonChart) {
+    comparisonChart.destroy();
+  }
+  
+  // Créer le nouveau graphique
+  comparisonChart = new Chart(ctx, config);
+  
+  // Ajouter une fonction directe pour dessiner la ligne d'objectif et la zone d'écart
+  comparisonChart.options.animation.onComplete = function() {
+    const ctx = comparisonChart.ctx;
+    const yAxis = comparisonChart.scales.y;
+    const xAxis = comparisonChart.scales.x;
+    
+    // Récupérer les positions pour dessiner
+    const yPixelTAI = yAxis.getPixelForValue(totalTAI);
+    const yPixelObjectif = yAxis.getPixelForValue(objectif);
+    
+    ctx.save();
+    
+    // Tracer une ligne horizontale pour l'objectif
+    ctx.beginPath();
+    ctx.moveTo(xAxis.left, yPixelObjectif);
+    ctx.lineTo(xAxis.right, yPixelObjectif);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(75, 192, 192, 1)';
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    
+    // Dessiner la zone d'écart entre TAI et objectif
+    if (Math.abs(ecartAvecObjectif) > 2) {
+      ctx.fillStyle = ecartAvecObjectif >= 0 ? 'rgba(75, 192, 192, 0.2)' : 'rgba(255, 99, 132, 0.2)';
+      
+      // Calculer les dimensions de la zone
+      const startY = yPixelTAI;
+      const endY = yPixelObjectif;
+      const rectX = xAxis.getPixelForValue(0) - 10; // Un peu à gauche de la barre
+      const rectWidth = 20; // Largeur fixe pour ne pas couvrir la barre
+      
+      // Dessiner le rectangle
+      ctx.fillRect(rectX, Math.min(startY, endY), rectWidth, Math.abs(startY - endY));
+      
+      // Dessiner une flèche ou un indicateur
+      ctx.fillStyle = ecartAvecObjectif >= 0 ? 'rgba(75, 192, 192, 1)' : 'rgba(255, 99, 132, 1)';
+      ctx.font = 'bold 12px Arial';
+      ctx.textAlign = 'right';
+      
+      const ecartTexte = ecartAvecObjectif >= 0 
+        ? `+${ecartAvecObjectif.toFixed(1)}h` 
+        : `-${Math.abs(ecartAvecObjectif).toFixed(1)}h`;
+      
+      ctx.fillText(ecartTexte, rectX - 5, (startY + endY) / 2);
+    }
+    
+    // Ajouter un texte "Objectif TAI: X"
+    ctx.fillStyle = 'rgba(75, 192, 192, 1)';
+    ctx.font = 'bold 12px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText('Objectif TAI: ' + objectif, xAxis.right - 5, yPixelObjectif - 5);
+    
+    ctx.restore();
+  };
+  
+  // Mise à jour de l'affichage de l'écart
+  const ecartBadge = document.getElementById('ecart-objectif-badge');
+  if (ecartBadge) {
+    // Déterminer la couleur du badge en fonction de l'écart
+    let badgeClass = 'bg-primary';
+    let ecartTexte = '';
+    
+    if (ecartAvecObjectif > 0) {
+      // En dessous de l'objectif (bon)
+      badgeClass = 'bg-success';
+      ecartTexte = `TAI sous l'objectif: ${ecartAvecObjectif.toFixed(2)}h`;
+    } else if (ecartAvecObjectif < 0) {
+      // Au-dessus de l'objectif (mauvais)
+      badgeClass = 'bg-danger';
+      ecartTexte = `TAI au-dessus de l'objectif: ${Math.abs(ecartAvecObjectif).toFixed(2)}h`;
+    } else {
+      // Exactement à l'objectif
+      badgeClass = 'bg-info';
+      ecartTexte = `TAI = Objectif exactement`;
+    }
+    
+    // Mettre à jour la classe et le texte du badge
+    ecartBadge.className = `badge ${badgeClass}`;
+    ecartBadge.textContent = ecartTexte;
+  }
+}
+
 
 // Modification du tableau "Détail par poste"
 function updatePostesSection() {
