@@ -6559,6 +6559,46 @@ function initAleasAnalysisTab() {
     });
 }
 
+/**
+ * Mettre à jour le total d'heures d'aléas dans la vue d'ensemble
+ * Cette fonction est appelée après le chargement des données d'aléas
+ */
+function updateAleasTotalInOverview() {
+    // Vérifier si nous avons des données d'aléas
+    if (!aleasAnalysisData || aleasAnalysisData.length === 0) {
+        console.log("Pas de données d'aléas disponibles pour mettre à jour le total");
+        return;
+    }
+    
+    // Calculer le total des heures d'aléas
+    let totalHeuresAleas = 0;
+    
+    aleasAnalysisData.forEach(alea => {
+        if (alea.duree && !isNaN(parseFloat(alea.duree))) {
+            totalHeuresAleas += parseFloat(alea.duree);
+        }
+    });
+    
+    // Mettre à jour l'affichage dans la vue d'ensemble
+    const totalElement = document.getElementById('aleas-total-heures');
+    if (totalElement) {
+        totalElement.textContent = totalHeuresAleas.toFixed(2);
+        console.log("Total des heures d'aléas mis à jour dans la vue d'ensemble:", totalHeuresAleas.toFixed(2));
+    } else {
+        console.error("Élément 'aleas-total-heures' non trouvé dans le DOM");
+    }
+    
+    // Mettre à jour également le graphique de comparaison s'il existe
+    if (typeof updateComparisonChart === 'function') {
+        try {
+            updateComparisonChart();
+            console.log("Graphique de comparaison mis à jour avec les nouvelles valeurs d'aléas");
+        } catch (error) {
+            console.error("Erreur lors de la mise à jour du graphique de comparaison:", error);
+        }
+    }
+}
+
 
 /**
  * Charger les données d'aléas pour l'analyse
@@ -6584,9 +6624,16 @@ function loadAleasAnalysisData() {
                     // Mettre à jour l'interface
                     updateAleasAnalysisUI();
                     document.getElementById('aleas-analysis-content').style.display = 'block';
+                    
+                    // AJOUT: Mettre à jour le total des heures d'aléas dans la vue d'ensemble
+                    updateAleasTotalInOverview();
                 } else {
                     // Aucun aléa trouvé
                     document.getElementById('aleas-analysis-empty').style.display = 'block';
+                    
+                    // AJOUT: Mettre à jour avec 0 heure d'aléas
+                    aleasAnalysisData = [];
+                    updateAleasTotalInOverview();
                 }
             } else {
                 // Erreur
@@ -6770,23 +6817,43 @@ function updatePaginationButtons() {
 /**
  * Filtrer le tableau d'aléas selon le terme de recherche
  */
+/**
+ * Fonction corrigée pour filtrer le tableau d'aléas selon le terme de recherche
+ */
 function filterAleasAnalysisTable() {
+    console.log("Filtrage du tableau d'aléas...");
+    
+    // Récupérer le terme de recherche et le transformer en minuscules
     const searchTerm = document.getElementById('aleas-analysis-search').value.toLowerCase().trim();
-
+    console.log("Terme de recherche:", searchTerm);
+    
     // Si aucun terme de recherche, utiliser les données complètes
     if (!searchTerm) {
         filteredAleasData = [...aleasAnalysisData];
+        console.log("Aucun terme de recherche, affichage de toutes les données");
     } else {
         // Filtrer les données
         filteredAleasData = aleasAnalysisData.filter(alea => {
+            // Convertir toutes les valeurs en chaînes pour éviter les erreurs
+            const operateur = String(alea.operateur || '').toLowerCase();
+            const equipe = String(alea.equipe || '').toLowerCase();
+            const poste = String(alea.poste || '').toLowerCase();
+            const typeAlea = String(alea.typeAlea || '').toLowerCase();
+            const commentaire = String(alea.commentaire || '').toLowerCase();
+            const date = String(alea.date || '').toLowerCase();
+            
+            // Vérifier si le terme de recherche est présent dans l'une des valeurs
             return (
-                (alea.operateur && alea.operateur.toLowerCase().includes(searchTerm)) ||
-                (alea.equipe && alea.equipe.toLowerCase().includes(searchTerm)) ||
-                (alea.poste && alea.poste.toLowerCase().includes(searchTerm)) ||
-                (alea.typeAlea && alea.typeAlea.toLowerCase().includes(searchTerm)) ||
-                (alea.commentaire && alea.commentaire.toLowerCase().includes(searchTerm))
+                operateur.includes(searchTerm) ||
+                equipe.includes(searchTerm) ||
+                poste.includes(searchTerm) ||
+                typeAlea.includes(searchTerm) ||
+                commentaire.includes(searchTerm) ||
+                date.includes(searchTerm)
             );
         });
+        
+        console.log(`Filtrage effectué: ${filteredAleasData.length}/${aleasAnalysisData.length} éléments trouvés`);
     }
 
     // Réinitialiser la pagination
@@ -6796,10 +6863,79 @@ function filterAleasAnalysisTable() {
     populateAleasAnalysisTable();
 
     // Mettre à jour le compteur
-    document.getElementById('aleas-analysis-table-count').textContent = filteredAleasData.length + ' aléa' + (filteredAleasData.length > 1 ? 's' : '');
+    document.getElementById('aleas-analysis-table-count').textContent = 
+        filteredAleasData.length + ' aléa' + (filteredAleasData.length > 1 ? 's' : '');
 
     // Mettre à jour les boutons de pagination
     updatePaginationButtons();
+}
+
+/**
+ * Fonction pour effacer la recherche
+ */
+function clearAleasSearch() {
+    console.log("Effacement de la recherche...");
+    
+    // Effacer le champ de recherche
+    const searchInput = document.getElementById('aleas-analysis-search');
+    if (searchInput) {
+        searchInput.value = '';
+        
+        // Déclencher manuellement le filtrage
+        filterAleasAnalysisTable();
+    }
+}
+
+function initAleasSearchListeners() {
+    console.log("Initialisation des écouteurs pour la recherche d'aléas");
+    
+    // Récupérer les éléments du DOM nécessaires
+    const searchInput = document.getElementById('aleas-analysis-search');
+    const clearButton = document.getElementById('btn-clear-aleas-search');
+    
+    // Vérifier que les éléments existent
+    if (!searchInput) {
+        console.error("Élément de recherche 'aleas-analysis-search' introuvable");
+        return;
+    }
+    
+    if (!clearButton) {
+        console.error("Bouton d'effacement 'btn-clear-aleas-search' introuvable");
+        return;
+    }
+    
+    // Supprimer les anciens écouteurs pour éviter les doublons
+    searchInput.removeEventListener('input', filterAleasAnalysisTable);
+    clearButton.removeEventListener('click', clearAleasSearch);
+    
+    // Ajouter les nouveaux écouteurs
+    searchInput.addEventListener('input', filterAleasAnalysisTable);
+    clearButton.addEventListener('click', clearAleasSearch);
+    
+    console.log("Écouteurs pour la recherche d'aléas initialisés avec succès");
+}
+
+/**
+ * Passer à la page précédente de résultats
+ */
+function prevAleasPage() {
+    if (currentAleasPage > 1) {
+        currentAleasPage--;
+        populateAleasAnalysisTable();
+        updatePaginationButtons();
+    }
+}
+
+/**
+ * Passer à la page suivante de résultats
+ */
+function nextAleasPage() {
+    const totalPages = Math.ceil(filteredAleasData.length / aleasPerPage);
+    if (currentAleasPage < totalPages) {
+        currentAleasPage++;
+        populateAleasAnalysisTable();
+        updatePaginationButtons();
+    }
 }
 
 /**
@@ -6808,47 +6944,57 @@ function filterAleasAnalysisTable() {
 function initAleasAnalysisTab() {
     console.log("Initialisation de l'onglet d'analyse des aléas");
 
-    // Ajouter des écouteurs d'événements
-    document.getElementById('btn-refresh-aleas-analysis').addEventListener('click', loadAleasAnalysisData);
+    // Bouton de rafraîchissement
+    const refreshButton = document.getElementById('btn-refresh-aleas-analysis');
+    if (refreshButton) {
+        refreshButton.removeEventListener('click', loadAleasAnalysisData);
+        refreshButton.addEventListener('click', loadAleasAnalysisData);
+    }
+    
+    // Boutons de type de période
     document.querySelectorAll('input[name="aleas-periode-type"]').forEach(input => {
+        input.removeEventListener('change', updateAleasEvolutionChart);
         input.addEventListener('change', updateAleasEvolutionChart);
     });
 
     // Chargement initial des données quand on clique sur l'onglet
-    document.getElementById('tab-aleas').addEventListener('click', function () {
-        console.log("Clic sur l'onglet Analyse Aléas");
-        document.getElementById('operateur-selector').style.display = 'none';
+    const aleasTab = document.getElementById('tab-aleas');
+    if (aleasTab) {
+        aleasTab.removeEventListener('click', onAleasTabClick);
+        aleasTab.addEventListener('click', onAleasTabClick);
+    }
 
-        // Vérifier si les données ont déjà été chargées
-        if (!aleasAnalysisData || aleasAnalysisData.length === 0) {
-            loadAleasAnalysisData();
-        }
-    });
+    // Écouteurs pour la pagination
+    const prevButton = document.getElementById('btn-prev-page');
+    const nextButton = document.getElementById('btn-next-page');
+    
+    if (prevButton) {
+        prevButton.removeEventListener('click', prevAleasPage);
+        prevButton.addEventListener('click', prevAleasPage);
+    }
+    
+    if (nextButton) {
+        nextButton.removeEventListener('click', nextAleasPage);
+        nextButton.addEventListener('click', nextAleasPage);
+    }
 
-    // Écouteurs pour la pagination et la recherche
-    document.getElementById('btn-prev-page').addEventListener('click', function () {
-        if (currentAleasPage > 1) {
-            currentAleasPage--;
-            populateAleasAnalysisTable();
-            updatePaginationButtons();
-        }
-    });
+    // Initialiser les écouteurs pour la recherche
+    initAleasSearchListeners();
+    
+    console.log("Initialisation de l'onglet d'analyse des aléas terminée");
+}
 
-    document.getElementById('btn-next-page').addEventListener('click', function () {
-        const totalPages = Math.ceil(filteredAleasData.length / aleasPerPage);
-        if (currentAleasPage < totalPages) {
-            currentAleasPage++;
-            populateAleasAnalysisTable();
-            updatePaginationButtons();
-        }
-    });
+function onAleasTabClick() {
+    console.log("Clic sur l'onglet Analyse Aléas");
+    document.getElementById('operateur-selector').style.display = 'none';
 
-    document.getElementById('aleas-analysis-search').addEventListener('input', filterAleasAnalysisTable);
-
-    document.getElementById('btn-clear-aleas-search').addEventListener('click', function () {
-        document.getElementById('aleas-analysis-search').value = '';
-        filterAleasAnalysisTable();
-    });
+    // Vérifier si les données ont déjà été chargées
+    if (!aleasAnalysisData || aleasAnalysisData.length === 0) {
+        loadAleasAnalysisData();
+    } else {
+        // S'assurer que la recherche fonctionne correctement même si les données sont déjà chargées
+        initAleasSearchListeners();
+    }
 }
 
 /**
@@ -7506,32 +7652,105 @@ function populateAleasTable(aleas) {
 }
 
 /**
- * Exporter les aléas vers un fichier CSV
+ * Exporter les aléas vers un fichier Excel correctement formaté
  * @param {Array} aleas - Liste des aléas à exporter
- * @param {string} operateur - Nom de l'opérateur
+ * @param {string} operateur - Nom de l'opérateur ou identifiant pour le nom du fichier
  */
 function exportAleasToCSV(aleas, operateur) {
-    // Définir les en-têtes du CSV
-    let csvContent = "Date,Type,Poste,Durée,Commentaire\n";
+    // Vérifier s'il y a des données à exporter
+    if (!aleas || aleas.length === 0) {
+        alert("Aucune donnée à exporter");
+        return;
+    }
 
-    // Ajouter chaque aléa
-    aleas.forEach(function (alea) {
-        // Échapper les virgules et les guillemets dans les champs
-        const escapedComment = (alea.commentaire || '').replace(/"/g, '""');
-
-        csvContent += `${alea.date},"${alea.typeAlea || 'Non spécifié'}","${alea.poste || 'Non spécifié'}",${alea.duree || ''},"${escapedComment}"\n`;
-    });
-
-    // Créer un élément de lien pour le téléchargement
-    const encodedUri = encodeURI('data:text/csv;charset=utf-8,' + csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `aleas_${operateur.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`);
-
-    // Simuler un clic sur le lien
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+        // Déterminer si c'est un export d'un opérateur spécifique ou de tous les aléas
+        const isSingleOperator = operateur !== 'tous' && operateur !== 'tous_aleas';
+        
+        // Définir les en-têtes du CSV en fonction du type d'export
+        let headers = isSingleOperator 
+            ? ["Date", "Type", "Poste", "Équipe", "Durée (h)", "Commentaire"]
+            : ["Date", "Opérateur", "Équipe", "Poste", "Type", "Durée (h)", "Commentaire"];
+        
+        // Créer la ligne d'en-tête avec séparateur point-virgule (standard européen pour CSV)
+        let csvContent = headers.join(';') + '\r\n';
+        
+        // Fonction utilitaire pour formater en toute sécurité les valeurs
+        function formatValue(value, escapeQuotes = false) {
+            // Convertir explicitement en chaîne et gérer les valeurs null/undefined
+            let strValue = (value === null || value === undefined) ? '' : String(value);
+            
+            // Remplacer les point-virgules par des virgules pour éviter les problèmes de séparation
+            strValue = strValue.replace(/;/g, ',');
+            
+            // Remplacer les retours à la ligne par des espaces
+            strValue = strValue.replace(/\r?\n/g, ' ');
+            
+            // Si demandé, échapper les guillemets (pour les commentaires)
+            if (escapeQuotes) {
+                strValue = strValue.replace(/"/g, '""');
+            }
+            
+            // Si la valeur contient des séparateurs, l'entourer de guillemets
+            if (strValue.includes(';') || strValue.includes('"')) {
+                strValue = '"' + strValue + '"';
+            }
+            
+            return strValue;
+        }
+        
+        // Ajouter chaque aléa
+        aleas.forEach(function(alea) {
+            // Préparer les valeurs en les formatant correctement
+            const date = formatValue(alea.date);
+            const type = formatValue(alea.typeAlea || 'Non spécifié');
+            const poste = formatValue(alea.poste || 'Non spécifié');
+            const equipe = formatValue(alea.equipe || 'Non spécifié');
+            const duree = formatValue(alea.duree);
+            const commentaire = formatValue(alea.commentaire || '', true);
+            const operateurName = formatValue(alea.operateur || 'Non spécifié');
+            
+            // Construire la ligne avec séparateur point-virgule en fonction du type d'export
+            let row = isSingleOperator
+                ? [date, type, poste, equipe, duree, commentaire]
+                : [date, operateurName, equipe, poste, type, duree, commentaire];
+            
+            // Ajouter la ligne au contenu CSV
+            csvContent += row.join(';') + '\r\n';
+        });
+        
+        // Utiliser BOM (Byte Order Mark) pour que les caractères spéciaux s'affichent correctement dans Excel
+        const BOM = "\uFEFF";
+        const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8' });
+        
+        // Créer un URL pour le blob
+        const blobUrl = URL.createObjectURL(blob);
+        
+        // Créer un lien pour télécharger le fichier
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        
+        // Formater le nom du fichier avec extension .csv
+        const timestamp = new Date().toISOString().slice(0, 10);
+        const fileName = isSingleOperator
+            ? `aleas_${operateur.replace(/\s+/g, '_')}_${timestamp}.csv`
+            : `tous_aleas_${timestamp}.csv`;
+        
+        link.setAttribute('download', fileName);
+        
+        // Déclencher le téléchargement
+        document.body.appendChild(link);
+        link.click();
+        
+        // Nettoyer
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+        
+        console.log(`Export des aléas terminé: ${fileName}`);
+    } catch (error) {
+        console.error("Erreur lors de l'export des aléas:", error);
+        alert("Une erreur est survenue lors de l'export: " + error.message);
+    }
 }
 
 function createOperateurEquipesChart() {
@@ -7682,6 +7901,9 @@ function handleError(error) {
     document.getElementById('loader').style.display = 'none';
     alert("Une erreur s'est produite: " + error);
 }
+
+
+
 </script>
 
 </body>
